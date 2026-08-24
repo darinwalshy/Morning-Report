@@ -2,7 +2,7 @@
 // 🛠️ UNIQUE IDENTIFIERS FOR THIS APP
 // ==========================================
 const BASE_PREFIX = 'morning_report_v1'; 
-const APP_PREFIX = `${BASE_PREFIX}1_01_`; // Initial version setup
+const APP_PREFIX = `${BASE_PREFIX}1_02_`; // Initial version setup
 const CACHE_NAME = APP_PREFIX + 'cache';
 
 // Exact GitHub repository name matching your URL path
