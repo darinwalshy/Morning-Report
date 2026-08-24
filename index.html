@@ -151,10 +151,44 @@
                 });
         }
 
-        // Text-to-Speech Functionality
+        // Speech Synthesis Setup
         const readBtn = document.getElementById('readBtn');
         const btnText = document.getElementById('btnText');
         const reportText = document.getElementById('reportText');
+
+        let availableVoices = [];
+
+        // Pre-load voices (Android requires listening for voiceschanged)
+        function loadVoices() {
+            if ('speechSynthesis' in window) {
+                availableVoices = window.speechSynthesis.getVoices();
+            }
+        }
+        
+        loadVoices();
+        if ('speechSynthesis' in window && window.speechSynthesis.onvoiceschanged !== undefined) {
+            window.speechSynthesis.onvoiceschanged = loadVoices;
+        }
+
+        // Select the best voice for Android/Samsung
+        function getBestVoice() {
+            if (!availableVoices.length) return null;
+
+            // 1. Prefer Google US English or Google UK English (much smoother on Android)
+            let chosenVoice = availableVoices.find(v => v.name.includes('Google') && v.lang.startsWith('en'));
+            
+            // 2. Fall back to any English Natural/Premium voice
+            if (!chosenVoice) {
+                chosenVoice = availableVoices.find(v => v.lang.startsWith('en') && (v.name.includes('Natural') || v.name.includes('Premium')));
+            }
+
+            // 3. Fall back to any English voice
+            if (!chosenVoice) {
+                chosenVoice = availableVoices.find(v => v.lang.startsWith('en'));
+            }
+
+            return chosenVoice || availableVoices[0];
+        }
 
         readBtn.addEventListener('click', () => {
             if (!('speechSynthesis' in window)) {
@@ -162,7 +196,6 @@
                 return;
             }
 
-            // If already speaking, cancel playback
             if (window.speechSynthesis.speaking) {
                 window.speechSynthesis.cancel();
                 resetButtonUI();
@@ -171,6 +204,15 @@
 
             const textToRead = reportText.innerText;
             const utterance = new SpeechSynthesisUtterance(textToRead);
+            
+            const bestVoice = getBestVoice();
+            if (bestVoice) {
+                utterance.voice = bestVoice;
+            }
+
+            // Fine-tuned speech parameters to fix Samsung audio crackle/robotics
+            utterance.rate = 0.95; // Slightly slower than default prevents clipping
+            utterance.pitch = 1.0;  // Standard natural pitch
 
             utterance.onstart = () => {
                 btnText.textContent = 'Stop Reading';
