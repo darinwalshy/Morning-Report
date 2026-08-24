@@ -75,19 +75,46 @@
             border-radius: 12px;
             padding: 16px;
             box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
         }
 
         .card-header {
             font-size: 1.1rem;
             font-weight: 700;
             color: #0f172a;
-            margin-bottom: 8px;
         }
 
         .card-body {
             font-size: 0.95rem;
             color: #475569;
             line-height: 1.5;
+        }
+
+        .audio-btn {
+            align-self: flex-start;
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            background-color: #0f172a;
+            color: #ffffff;
+            border: none;
+            border-radius: 8px;
+            padding: 10px 16px;
+            font-size: 0.9rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: background-color 0.2s ease, transform 0.1s ease;
+            -webkit-tap-highlight-color: transparent;
+        }
+
+        .audio-btn:active {
+            transform: scale(0.98);
+        }
+
+        .audio-btn.speaking {
+            background-color: #dc2626;
         }
     </style>
 </head>
@@ -103,9 +130,12 @@
     <main>
         <div class="data-card">
             <div class="card-header">Welcome to Morning Report</div>
-            <div class="card-body">
+            <div class="card-body" id="reportText">
                 This is your new Progressive Web App shell. We will build out the custom reporting logic here next.
             </div>
+            <button class="audio-btn" id="readBtn">
+                <span>🔊</span> <span id="btnText">Read Aloud</span>
+            </button>
         </div>
     </main>
 
@@ -119,6 +149,45 @@
                 .catch(error => {
                     console.error('ServiceWorker registration failed:', error);
                 });
+        }
+
+        // Text-to-Speech Functionality
+        const readBtn = document.getElementById('readBtn');
+        const btnText = document.getElementById('btnText');
+        const reportText = document.getElementById('reportText');
+
+        readBtn.addEventListener('click', () => {
+            if (!('speechSynthesis' in window)) {
+                alert('Text-to-speech is not supported in this browser.');
+                return;
+            }
+
+            // If already speaking, cancel playback
+            if (window.speechSynthesis.speaking) {
+                window.speechSynthesis.cancel();
+                resetButtonUI();
+                return;
+            }
+
+            const textToRead = reportText.innerText;
+            const utterance = new SpeechSynthesisUtterance(textToRead);
+
+            utterance.onstart = () => {
+                btnText.textContent = 'Stop Reading';
+                readBtn.firstElementChild.textContent = '⏹️';
+                readBtn.classList.add('speaking');
+            };
+
+            utterance.onend = resetButtonUI;
+            utterance.onerror = resetButtonUI;
+
+            window.speechSynthesis.speak(utterance);
+        });
+
+        function resetButtonUI() {
+            btnText.textContent = 'Read Aloud';
+            readBtn.firstElementChild.textContent = '🔊';
+            readBtn.classList.remove('speaking');
         }
     </script>
 </body>
