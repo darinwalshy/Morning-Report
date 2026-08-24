@@ -123,7 +123,7 @@
     <header>
         <div class="header-top">
             <h1>Morning Report</h1>
-            <span class="version-badge" id="appVersion">v1.01</span>
+            <span class="version-badge" id="appVersion">v1.02</span>
         </div>
     </header>
 
@@ -140,97 +140,108 @@
     </main>
 
     <script>
-        // Register Service Worker for offline capability
-        if ('serviceWorker' in navigator) {
-            navigator.serviceWorker.register('sw.js')
-                .then(registration => {
-                    console.log('ServiceWorker registration successful:', registration);
-                })
-                .catch(error => {
-                    console.error('ServiceWorker registration failed:', error);
-                });
-        }
+// Register Service Worker for offline capability
+if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.register('sw.js')
+        .then(registration => {
+            console.log('ServiceWorker registration successful:', registration);
+        })
+        .catch(error => {
+            console.error('ServiceWorker registration failed:', error);
+        });
+}
 
-        // Speech Synthesis Setup
-        const readBtn = document.getElementById('readBtn');
-        const btnText = document.getElementById('btnText');
-        const reportText = document.getElementById('reportText');
+// Speech Synthesis Setup
+const readBtn = document.getElementById('readBtn');
+const btnText = document.getElementById('btnText');
+const reportText = document.getElementById('reportText');
 
-        let availableVoices = [];
+let availableVoices = [];
 
-        // Pre-load voices (Android requires listening for voiceschanged)
-        function loadVoices() {
-            if ('speechSynthesis' in window) {
-                availableVoices = window.speechSynthesis.getVoices();
-            }
-        }
+function loadVoices() {
+    if ('speechSynthesis' in window) {
+        availableVoices = window.speechSynthesis.getVoices();
+    }
+}
+
+loadVoices();
+if ('speechSynthesis' in window && window.speechSynthesis.onvoiceschanged !== undefined) {
+    window.speechSynthesis.onvoiceschanged = loadVoices;
+}
+
+function getBestVoice() {
+    if (!availableVoices.length) return null;
+
+    // Prioritize high-quality network/online Google voices
+    let chosenVoice = availableVoices.find(v => 
+        v.lang.startsWith('en') && 
+        v.name.includes('Google') && 
+        (v.name.includes('network') || v.name.includes('Online') || v.name.includes('Natural'))
+    );
+
+    // Fallback to any Google English voice
+    if (!chosenVoice) {
+        chosenVoice = availableVoices.find(v => v.name.includes('Google') && v.lang.startsWith('en'));
+    }
+
+    // Fallback to standard English voice
+    if (!chosenVoice) {
+        chosenVoice = availableVoices.find(v => v.lang.startsWith('en'));
+    }
+
+    return chosenVoice || availableVoices[0];
+}
+
+readBtn.addEventListener('click', () => {
+    if (!('speechSynthesis' in window)) {
+        alert('Text-to-speech is not supported in this browser.');
+        return;
+    }
+
+    if (window.speechSynthesis.speaking) {
+        window.speechSynthesis.cancel();
+        resetButtonUI();
+        return;
+    }
+
+    const textToRead = reportText.innerText;
+    
+    // Split text into natural chunks for smoother mobile audio rendering
+    const textChunks = textToRead.match(/[^.!?]+[.!?]+/g) || [textToRead];
+    const chosenVoice = getBestVoice();
+
+    textChunks.forEach((chunk, index) => {
+        const utterance = new SpeechSynthesisUtterance(chunk.trim());
         
-        loadVoices();
-        if ('speechSynthesis' in window && window.speechSynthesis.onvoiceschanged !== undefined) {
-            window.speechSynthesis.onvoiceschanged = loadVoices;
+        if (chosenVoice) {
+            utterance.voice = chosenVoice;
         }
 
-        // Select the best voice for Android/Samsung
-        function getBestVoice() {
-            if (!availableVoices.length) return null;
+        utterance.rate = 0.92;  // Slightly relaxed rate prevents clipping
+        utterance.pitch = 0.95; // Slightly lower pitch reduces robotic tone
 
-            // 1. Prefer Google US English or Google UK English (much smoother on Android)
-            let chosenVoice = availableVoices.find(v => v.name.includes('Google') && v.lang.startsWith('en'));
-            
-            // 2. Fall back to any English Natural/Premium voice
-            if (!chosenVoice) {
-                chosenVoice = availableVoices.find(v => v.lang.startsWith('en') && (v.name.includes('Natural') || v.name.includes('Premium')));
-            }
-
-            // 3. Fall back to any English voice
-            if (!chosenVoice) {
-                chosenVoice = availableVoices.find(v => v.lang.startsWith('en'));
-            }
-
-            return chosenVoice || availableVoices[0];
-        }
-
-        readBtn.addEventListener('click', () => {
-            if (!('speechSynthesis' in window)) {
-                alert('Text-to-speech is not supported in this browser.');
-                return;
-            }
-
-            if (window.speechSynthesis.speaking) {
-                window.speechSynthesis.cancel();
-                resetButtonUI();
-                return;
-            }
-
-            const textToRead = reportText.innerText;
-            const utterance = new SpeechSynthesisUtterance(textToRead);
-            
-            const bestVoice = getBestVoice();
-            if (bestVoice) {
-                utterance.voice = bestVoice;
-            }
-
-            // Fine-tuned speech parameters to fix Samsung audio crackle/robotics
-            utterance.rate = 0.95; // Slightly slower than default prevents clipping
-            utterance.pitch = 1.0;  // Standard natural pitch
-
+        if (index === 0) {
             utterance.onstart = () => {
                 btnText.textContent = 'Stop Reading';
                 readBtn.firstElementChild.textContent = '⏹️';
                 readBtn.classList.add('speaking');
             };
+        }
 
+        if (index === textChunks.length - 1) {
             utterance.onend = resetButtonUI;
             utterance.onerror = resetButtonUI;
-
-            window.speechSynthesis.speak(utterance);
-        });
-
-        function resetButtonUI() {
-            btnText.textContent = 'Read Aloud';
-            readBtn.firstElementChild.textContent = '🔊';
-            readBtn.classList.remove('speaking');
         }
+
+        window.speechSynthesis.speak(utterance);
+    });
+});
+
+function resetButtonUI() {
+    btnText.textContent = 'Read Aloud';
+    readBtn.firstElementChild.textContent = '🔊';
+    readBtn.classList.remove('speaking');
+}
     </script>
 </body>
 </html>
