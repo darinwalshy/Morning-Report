@@ -84,16 +84,25 @@
             font-size: 1.1rem;
             font-weight: 700;
             color: #0f172a;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
         }
 
         .card-body {
             font-size: 0.95rem;
             color: #475569;
             line-height: 1.5;
+            white-space: pre-line;
         }
 
-        .audio-btn {
-            align-self: flex-start;
+        .controls {
+            display: flex;
+            gap: 8px;
+            align-items: center;
+        }
+
+        .audio-btn, .refresh-btn {
             display: inline-flex;
             align-items: center;
             gap: 8px;
@@ -109,12 +118,21 @@
             -webkit-tap-highlight-color: transparent;
         }
 
-        .audio-btn:active {
+        .refresh-btn {
+            background-color: #0284c7;
+        }
+
+        .audio-btn:active, .refresh-btn:active {
             transform: scale(0.98);
         }
 
         .audio-btn.speaking {
             background-color: #dc2626;
+        }
+
+        .loading-text {
+            color: #64748b;
+            font-style: italic;
         }
     </style>
 </head>
@@ -123,19 +141,26 @@
     <header>
         <div class="header-top">
             <h1>Morning Report</h1>
-            <span class="version-badge" id="appVersion">v1.02</span>
+            <span class="version-badge" id="appVersion">v1.03</span>
         </div>
     </header>
 
     <main>
         <div class="data-card">
-            <div class="card-header">Welcome to Morning Report</div>
-            <div class="card-body" id="reportText">
-                This is your new Progressive Web App shell. We will build out the custom reporting logic here next.
+            <div class="card-header">
+                <span>Daily Briefing</span>
             </div>
-            <button class="audio-btn" id="readBtn">
-                <span>🔊</span> <span id="btnText">Read Aloud</span>
-            </button>
+            <div class="card-body loading-text" id="reportText">
+                Fetching your briefing from Gemini...
+            </div>
+            <div class="controls">
+                <button class="audio-btn" id="readBtn">
+                    <span>🔊</span> <span id="btnText">Read Aloud</span>
+                </button>
+                <button class="refresh-btn" id="refreshBtn">
+                    <span>🔄</span> <span>Refresh</span>
+                </button>
+            </div>
         </div>
     </main>
 
@@ -151,10 +176,48 @@ if ('serviceWorker' in navigator) {
         });
 }
 
+// Backend Proxy Integration
+const FUNCTION_URL = "https://us-central1-morning-report-3afe0.cloudfunctions.net/generateBriefing";
+const reportText = document.getElementById('reportText');
+const refreshBtn = document.getElementById('refreshBtn');
+
+async function loadBriefing() {
+    reportText.classList.add('loading-text');
+    reportText.innerText = "Fetching your briefing from Gemini...";
+
+    const prompt = "Provide a concise, encouraging 3-sentence morning briefing focused on productivity, clarity, and starting the day strong.";
+
+    try {
+        const response = await fetch(FUNCTION_URL, {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json",
+            },
+            body: JSON.stringify({ userPrompt: prompt }),
+        });
+
+        if (!response.ok) {
+            throw new Error(`Server status: ${response.status}`);
+        }
+
+        const data = await response.json();
+        reportText.classList.remove('loading-text');
+        reportText.innerText = data.text || "No response text received.";
+    } catch (error) {
+        console.error("Failed to load briefing:", error);
+        reportText.classList.remove('loading-text');
+        reportText.innerText = "Unable to connect to the briefing service. Please check your network or try again.";
+    }
+}
+
+refreshBtn.addEventListener('click', loadBriefing);
+
+// Fetch on initial load
+window.addEventListener('DOMContentLoaded', loadBriefing);
+
 // Speech Synthesis Setup
 const readBtn = document.getElementById('readBtn');
 const btnText = document.getElementById('btnText');
-const reportText = document.getElementById('reportText');
 
 let availableVoices = [];
 
@@ -172,19 +235,16 @@ if ('speechSynthesis' in window && window.speechSynthesis.onvoiceschanged !== un
 function getBestVoice() {
     if (!availableVoices.length) return null;
 
-    // Prioritize high-quality network/online Google voices
     let chosenVoice = availableVoices.find(v => 
         v.lang.startsWith('en') && 
         v.name.includes('Google') && 
         (v.name.includes('network') || v.name.includes('Online') || v.name.includes('Natural'))
     );
 
-    // Fallback to any Google English voice
     if (!chosenVoice) {
         chosenVoice = availableVoices.find(v => v.name.includes('Google') && v.lang.startsWith('en'));
     }
 
-    // Fallback to standard English voice
     if (!chosenVoice) {
         chosenVoice = availableVoices.find(v => v.lang.startsWith('en'));
     }
@@ -206,7 +266,6 @@ readBtn.addEventListener('click', () => {
 
     const textToRead = reportText.innerText;
     
-    // Split text into natural chunks for smoother mobile audio rendering
     const textChunks = textToRead.match(/[^.!?]+[.!?]+/g) || [textToRead];
     const chosenVoice = getBestVoice();
 
@@ -217,8 +276,8 @@ readBtn.addEventListener('click', () => {
             utterance.voice = chosenVoice;
         }
 
-        utterance.rate = 0.92;  // Slightly relaxed rate prevents clipping
-        utterance.pitch = 0.95; // Slightly lower pitch reduces robotic tone
+        utterance.rate = 0.92;
+        utterance.pitch = 0.95;
 
         if (index === 0) {
             utterance.onstart = () => {
