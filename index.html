@@ -135,6 +135,31 @@
             font-style: italic;
         }
     </style>
+    <!-- Firebase App and Auth SDKs (v10 modular CDN) -->
+<script type="module">
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
+  import { getAuth, signInWithEmailAndPassword, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js";
+
+// Your web app's Firebase configuration
+const firebaseConfig = {
+  apiKey: "AIzaSyC0iK84tNEKviLoxj2QCDDstW-zH-mOI-s",
+  authDomain: "morning-report-3afe0.firebaseapp.com",
+  projectId: "morning-report-3afe0",
+  storageBucket: "morning-report-3afe0.firebasestorage.app",
+  messagingSenderId: "331945301361",
+  appId: "1:331945301361:web:689ac442d27da5d9fe12d0"
+};
+
+  // Initialize Firebase & Auth
+  const app = initializeApp(firebaseConfig);
+  const auth = getAuth(app);
+
+  // Expose auth functions globally or attach them to your app logic
+  window.auth = auth;
+  window.signInWithEmailAndPassword = signInWithEmailAndPassword;
+  window.onAuthStateChanged = onAuthStateChanged;
+  window.signOut = signOut;
+</script>
 </head>
 <body>
 
@@ -163,6 +188,24 @@
             </div>
         </div>
     </main>
+
+    <!-- Login Modal/Container -->
+    <div id="login-container" style="display: block;">
+    <h2>Sign In</h2>
+    <form id="login-form">
+    <input type="email" id="email-input" placeholder="Email" required />
+    <input type="password" id="password-input" placeholder="Password" required />
+    <button type="submit">Log In</button>
+    </form>
+    <p id="login-error" style="color: red; display: none;"></p>
+    </div>
+
+    <!-- Main App Content (hidden until authenticated) -->
+    <div id="app-container" style="display: none;">
+    <button id="logout-btn">Log Out</button>
+    <button id="generate-briefing-btn">Generate Briefing</button>
+    <div id="briefing-output"></div>
+    </div>
 
     <script>
 // Register Service Worker for offline capability

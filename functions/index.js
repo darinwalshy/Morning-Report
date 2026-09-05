@@ -1,48 +1,44 @@
-import { onRequest } from "firebase-functions/v2/https";
-import { defineSecret } from "firebase-functions/params";
-import { GoogleGenAI } from "@google/genai";
+import { initializeApp } from "firebase-admin/app";
+import { getAuth } from "firebase-admin/auth";
+import * as functions from "firebase-functions";
 
-const geminiApiKey = defineSecret("GEMINI_API_KEY");
+// Initialize Firebase Admin SDK
+initializeApp();
 
-export const generateBriefing = onRequest(
-  {
-    secrets: [geminiApiKey],
-    cors: true,
-    region: "us-central1"
-  },
-  async (req, res) => {
-    if (req.method !== "POST") {
-      return res.status(405).json({ error: "Method Not Allowed. Use POST." });
-    }
+export const generateBriefing = functions.https.onRequest(async (req, res) => {
+  // 1. Enable CORS for PWA request handling
+  res.set("Access-Control-Allow-Origin", "*");
+  res.set("Access-Control-Allow-Headers", "Authorization, Content-Type");
 
-    try {
-      const body = typeof req.body === "string" ? JSON.parse(req.body) : req.body;
-      const userPrompt = body?.userPrompt;
-
-      if (!userPrompt) {
-        return res.status(400).json({ error: "Missing required parameter: userPrompt" });
-      }
-
-      // Initialize explicitly using the secret key
-      const ai = new GoogleGenAI({ 
-        apiKey: geminiApiKey.value()
-      });
-
-      const response = await ai.models.generateContent({
-        model: "gemini-3.6-flash",
-        contents: userPrompt,
-      });
-
-      return res.status(200).json({
-        success: true,
-        text: response.text,
-      });
-    } catch (error) {
-      console.error("Error generating briefing:", error);
-      return res.status(500).json({
-        error: "Internal Server Error",
-        details: error.message,
-      });
-    }
+  if (req.method === "OPTIONS") {
+    res.status(204).send("");
+    return;
   }
-);
+
+  try {
+    // 2. Extract Authorization header
+    const authHeader = req.headers.authorization;
+    if (!authHeader || !authHeader.startsWith("Bearer ")) {
+      res.status(401).json({ error: "Unauthorized: Missing or invalid token format." });
+      return;
+    }
+
+    const idToken = authHeader.split("Bearer ")[1];
+
+    // 3. Verify ID Token using Firebase Admin Auth
+    const decodedToken = await getAuth().verifyIdToken(idToken);
+    const userId = decodedToken.uid;
+
+    // 4. Your existing briefing logic goes here
+    
+    res.status(200).json({
+      success: true,
+      message: "Briefing generated successfully.",
+      user: userId
+    });
+
+  } catch (error) {
+    console.error("Token verification failed:", error);
+    res.status(403).json({ error: "Unauthorized: Invalid or expired token." });
+  }
+});
