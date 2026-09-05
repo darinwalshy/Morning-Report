@@ -1,6 +1,7 @@
-const FUNCTION_URL = "https://darinwalshy.github.io/Morning-Report/";
+// 1. Target your actual deployed Cloud Function, not the GitHub Pages site URL
+const FUNCTION_URL = "https://us-central1-morning-report-3afe0.cloudfunctions.net/generateBriefing";
 
-// 1. Handle Login Form Submission
+// 2. Handle Login Form Submission
 document.getElementById("login-form").addEventListener("submit", async (e) => {
   e.preventDefault();
   const email = document.getElementById("email-input").value.trim();
@@ -11,12 +12,13 @@ document.getElementById("login-form").addEventListener("submit", async (e) => {
     errorElement.style.display = "none";
     await window.signInWithEmailAndPassword(window.auth, email, password);
   } catch (err) {
+    console.error("Login error:", err);
     errorElement.textContent = "Invalid email or password.";
     errorElement.style.display = "block";
   }
 });
 
-// 2. Track Auth State Changes (Auto-login & Session Management)
+// 3. Track Auth State Changes (Auto-login & Session Management)
 window.onAuthStateChanged(window.auth, (user) => {
   const loginView = document.getElementById("login-container");
   const appView = document.getElementById("app-container");
@@ -30,19 +32,25 @@ window.onAuthStateChanged(window.auth, (user) => {
   }
 });
 
-// 3. Handle Logout
+// 4. Handle Logout
 document.getElementById("logout-btn").addEventListener("click", () => {
   window.signOut(window.auth);
 });
 
-// 4. Authenticated Request to Cloud Function
-document.getElementById("generate-briefing-btn").addEventListener("click", async () => {
+// 5. Authenticated Request to Cloud Function
+async function fetchBriefing() {
   const user = window.auth.currentUser;
-  if (!user) return;
+  if (!user) {
+    console.warn("Cannot generate briefing: No user authenticated.");
+    return;
+  }
+
+  const outputElement = document.getElementById("briefing-output");
+  outputElement.textContent = "Loading briefing...";
 
   try {
-    // Retrieve active Firebase ID Token
-    const idToken = await user.getIdToken();
+    // Retrieve fresh active Firebase ID Token
+    const idToken = await user.getIdToken(/* forceRefresh */ true);
 
     const response = await fetch(FUNCTION_URL, {
       method: "POST",
@@ -53,9 +61,17 @@ document.getElementById("generate-briefing-btn").addEventListener("click", async
       body: JSON.stringify({ action: "generate" })
     });
 
+    if (!response.ok) {
+      throw new Error(`Server returned status ${response.status}`);
+    }
+
     const data = await response.json();
-    document.getElementById("briefing-output").textContent = JSON.stringify(data, null, 2);
+    outputElement.textContent = JSON.stringify(data, null, 2);
   } catch (error) {
     console.error("Failed to generate briefing:", error);
+    outputElement.textContent = `Error: ${error.message}`;
   }
-});
+}
+
+// Attach listener to button
+document.getElementById("generate-briefing-btn").addEventListener("click", fetchBriefing);
