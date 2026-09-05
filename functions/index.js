@@ -37,7 +37,7 @@ export const generateBriefing = functions.https.onRequest(async (req, res) => {
     const prompt = "Provide a concise, encouraging 3-sentence morning briefing focused on productivity, clarity, and starting the day strong.";
     
     const response = await ai.models.generateContent({
-      model: "gemini-2.5-flash",
+      model: "gemini-3.6-flash",
       contents: prompt,
     });
 
