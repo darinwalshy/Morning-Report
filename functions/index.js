@@ -1,9 +1,13 @@
 import { initializeApp } from "firebase-admin/app";
 import { getAuth } from "firebase-admin/auth";
 import * as functions from "firebase-functions";
+import { GoogleGenAI } from "@google/genai";
 
 // Initialize Firebase Admin SDK
 initializeApp();
+
+// Initialize Gemini Client (uses GEMINI_API_KEY environment variable by default)
+const ai = new GoogleGenAI();
 
 export const generateBriefing = functions.https.onRequest(async (req, res) => {
   // 1. Enable CORS for PWA request handling
@@ -29,16 +33,23 @@ export const generateBriefing = functions.https.onRequest(async (req, res) => {
     const decodedToken = await getAuth().verifyIdToken(idToken);
     const userId = decodedToken.uid;
 
-    // 4. Your existing briefing logic goes here
+    // 4. Call Gemini to generate the morning briefing
+    const prompt = "Provide a concise, encouraging 3-sentence morning briefing focused on productivity, clarity, and starting the day strong.";
     
+    const response = await ai.models.generateContent({
+      model: "gemini-2.5-flash",
+      contents: prompt,
+    });
+
+    // 5. Send generated text back to the PWA
     res.status(200).json({
       success: true,
-      message: "Briefing generated successfully.",
+      text: response.text,
       user: userId
     });
 
   } catch (error) {
-    console.error("Token verification failed:", error);
-    res.status(403).json({ error: "Unauthorized: Invalid or expired token." });
+    console.error("Error running briefing endpoint:", error);
+    res.status(500).json({ error: "Failed to generate briefing." });
   }
 });

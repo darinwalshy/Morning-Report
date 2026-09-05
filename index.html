@@ -78,6 +78,7 @@
             display: flex;
             flex-direction: column;
             gap: 12px;
+            margin-top: 16px;
         }
 
         .card-header {
@@ -102,9 +103,10 @@
             align-items: center;
         }
 
-        .audio-btn, .refresh-btn {
+        .audio-btn, .refresh-btn, .btn-primary, .btn-danger {
             display: inline-flex;
             align-items: center;
+            justify-content: center;
             gap: 8px;
             background-color: #0f172a;
             color: #ffffff;
@@ -118,11 +120,15 @@
             -webkit-tap-highlight-color: transparent;
         }
 
-        .refresh-btn {
+        .refresh-btn, .btn-primary {
             background-color: #0284c7;
         }
 
-        .audio-btn:active, .refresh-btn:active {
+        .btn-danger {
+            background-color: #dc2626;
+        }
+
+        .audio-btn:active, .refresh-btn:active, .btn-primary:active, .btn-danger:active {
             transform: scale(0.98);
         }
 
@@ -134,32 +140,62 @@
             color: #64748b;
             font-style: italic;
         }
+
+        /* Form Styles */
+        .auth-card {
+            background-color: #ffffff;
+            border: 1px solid #cbd5e1;
+            border-radius: 12px;
+            padding: 24px;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+        }
+
+        .form-group {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+        }
+
+        .form-group input {
+            padding: 10px 12px;
+            border: 1px solid #cbd5e1;
+            border-radius: 8px;
+            font-size: 0.95rem;
+        }
+
+        .user-nav {
+            display: flex;
+            justify-content: flex-end;
+            margin-bottom: 12px;
+        }
     </style>
+
     <!-- Firebase App and Auth SDKs (v10 modular CDN) -->
-<script type="module">
-  import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
-  import { getAuth, signInWithEmailAndPassword, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js";
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
+        import { getAuth, signInWithEmailAndPassword, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js";
 
-// Your web app's Firebase configuration
-const firebaseConfig = {
-  apiKey: "AIzaSyC0iK84tNEKviLoxj2QCDDstW-zH-mOI-s",
-  authDomain: "morning-report-3afe0.firebaseapp.com",
-  projectId: "morning-report-3afe0",
-  storageBucket: "morning-report-3afe0.firebasestorage.app",
-  messagingSenderId: "331945301361",
-  appId: "1:331945301361:web:689ac442d27da5d9fe12d0"
-};
+        const firebaseConfig = {
+            apiKey: "AIzaSyC0iK84tNEKviLoxj2QCDDstW-zH-mOI-s",
+            authDomain: "morning-report-3afe0.firebaseapp.com",
+            projectId: "morning-report-3afe0",
+            storageBucket: "morning-report-3afe0.firebasestorage.app",
+            messagingSenderId: "331945301361",
+            appId: "1:331945301361:web:689ac442d27da5d9fe12d0"
+        };
 
-  // Initialize Firebase & Auth
-  const app = initializeApp(firebaseConfig);
-  const auth = getAuth(app);
+        const app = initializeApp(firebaseConfig);
+        const auth = getAuth(app);
 
-  // Expose auth functions globally or attach them to your app logic
-  window.auth = auth;
-  window.signInWithEmailAndPassword = signInWithEmailAndPassword;
-  window.onAuthStateChanged = onAuthStateChanged;
-  window.signOut = signOut;
-</script>
+        window.auth = auth;
+        window.signInWithEmailAndPassword = signInWithEmailAndPassword;
+        window.onAuthStateChanged = onAuthStateChanged;
+        window.signOut = signOut;
+    </script>
+    <script type="module" src="app.js"></script>
 </head>
 <body>
 
@@ -171,179 +207,53 @@ const firebaseConfig = {
     </header>
 
     <main>
-        <div class="data-card">
-            <div class="card-header">
-                <span>Daily Briefing</span>
+        <!-- Login Container -->
+        <div id="login-container" class="auth-card" style="display: block;">
+            <h2>Sign In</h2>
+            <form id="login-form" class="form-group">
+                <input type="email" id="email-input" placeholder="Email" required />
+                <input type="password" id="password-input" placeholder="Password" required />
+                <button type="submit" class="btn-primary">Log In</button>
+            </form>
+            <p id="login-error" style="color: red; display: none;"></p>
+        </div>
+
+        <!-- Main App Content (hidden until authenticated) -->
+        <div id="app-container" style="display: none;">
+            <div class="user-nav">
+                <button id="logout-btn" class="btn-danger">Log Out</button>
             </div>
-            <div class="card-body loading-text" id="reportText">
-                Fetching your briefing from Gemini...
-            </div>
-            <div class="controls">
-                <button class="audio-btn" id="readBtn">
-                    <span>🔊</span> <span id="btnText">Read Aloud</span>
-                </button>
-                <button class="refresh-btn" id="refreshBtn">
-                    <span>🔄</span> <span>Refresh</span>
-                </button>
+
+            <div class="data-card">
+                <div class="card-header">
+                    <span>Daily Briefing</span>
+                </div>
+                <div class="card-body loading-text" id="reportText">
+                    Please click refresh to fetch your briefing...
+                </div>
+                <div class="controls">
+                    <button class="audio-btn" id="readBtn">
+                        <span>🔊</span> <span id="btnText">Read Aloud</span>
+                    </button>
+                    <button class="refresh-btn" id="refreshBtn">
+                        <span>🔄</span> <span>Refresh</span>
+                    </button>
+                </div>
             </div>
         </div>
     </main>
 
-    <!-- Login Modal/Container -->
-    <div id="login-container" style="display: block;">
-    <h2>Sign In</h2>
-    <form id="login-form">
-    <input type="email" id="email-input" placeholder="Email" required />
-    <input type="password" id="password-input" placeholder="Password" required />
-    <button type="submit">Log In</button>
-    </form>
-    <p id="login-error" style="color: red; display: none;"></p>
-    </div>
-
-    <!-- Main App Content (hidden until authenticated) -->
-    <div id="app-container" style="display: none;">
-    <button id="logout-btn">Log Out</button>
-    <button id="generate-briefing-btn">Generate Briefing</button>
-    <div id="briefing-output"></div>
-    </div>
-
     <script>
-// Register Service Worker for offline capability
-if ('serviceWorker' in navigator) {
-    navigator.serviceWorker.register('sw.js')
-        .then(registration => {
-            console.log('ServiceWorker registration successful:', registration);
-        })
-        .catch(error => {
-            console.error('ServiceWorker registration failed:', error);
-        });
-}
-
-// Backend Proxy Integration
-const FUNCTION_URL = "https://us-central1-morning-report-3afe0.cloudfunctions.net/generateBriefing";
-const reportText = document.getElementById('reportText');
-const refreshBtn = document.getElementById('refreshBtn');
-
-async function loadBriefing() {
-    reportText.classList.add('loading-text');
-    reportText.innerText = "Fetching your briefing from Gemini...";
-
-    const prompt = "Provide a concise, encouraging 3-sentence morning briefing focused on productivity, clarity, and starting the day strong.";
-
-    try {
-        const response = await fetch(FUNCTION_URL, {
-            method: "POST",
-            headers: {
-                "Content-Type": "application/json",
-            },
-            body: JSON.stringify({ userPrompt: prompt }),
-        });
-
-        if (!response.ok) {
-            throw new Error(`Server status: ${response.status}`);
+        // Register Service Worker for offline capability
+        if ('serviceWorker' in navigator) {
+            navigator.serviceWorker.register('sw.js')
+                .then(registration => {
+                    console.log('ServiceWorker registration successful:', registration);
+                })
+                .catch(error => {
+                    console.error('ServiceWorker registration failed:', error);
+                });
         }
-
-        const data = await response.json();
-        reportText.classList.remove('loading-text');
-        reportText.innerText = data.text || "No response text received.";
-    } catch (error) {
-        console.error("Failed to load briefing:", error);
-        reportText.classList.remove('loading-text');
-        reportText.innerText = "Unable to connect to the briefing service. Please check your network or try again.";
-    }
-}
-
-refreshBtn.addEventListener('click', loadBriefing);
-
-// Fetch on initial load
-window.addEventListener('DOMContentLoaded', loadBriefing);
-
-// Speech Synthesis Setup
-const readBtn = document.getElementById('readBtn');
-const btnText = document.getElementById('btnText');
-
-let availableVoices = [];
-
-function loadVoices() {
-    if ('speechSynthesis' in window) {
-        availableVoices = window.speechSynthesis.getVoices();
-    }
-}
-
-loadVoices();
-if ('speechSynthesis' in window && window.speechSynthesis.onvoiceschanged !== undefined) {
-    window.speechSynthesis.onvoiceschanged = loadVoices;
-}
-
-function getBestVoice() {
-    if (!availableVoices.length) return null;
-
-    let chosenVoice = availableVoices.find(v => 
-        v.lang.startsWith('en') && 
-        v.name.includes('Google') && 
-        (v.name.includes('network') || v.name.includes('Online') || v.name.includes('Natural'))
-    );
-
-    if (!chosenVoice) {
-        chosenVoice = availableVoices.find(v => v.name.includes('Google') && v.lang.startsWith('en'));
-    }
-
-    if (!chosenVoice) {
-        chosenVoice = availableVoices.find(v => v.lang.startsWith('en'));
-    }
-
-    return chosenVoice || availableVoices[0];
-}
-
-readBtn.addEventListener('click', () => {
-    if (!('speechSynthesis' in window)) {
-        alert('Text-to-speech is not supported in this browser.');
-        return;
-    }
-
-    if (window.speechSynthesis.speaking) {
-        window.speechSynthesis.cancel();
-        resetButtonUI();
-        return;
-    }
-
-    const textToRead = reportText.innerText;
-    
-    const textChunks = textToRead.match(/[^.!?]+[.!?]+/g) || [textToRead];
-    const chosenVoice = getBestVoice();
-
-    textChunks.forEach((chunk, index) => {
-        const utterance = new SpeechSynthesisUtterance(chunk.trim());
-        
-        if (chosenVoice) {
-            utterance.voice = chosenVoice;
-        }
-
-        utterance.rate = 0.92;
-        utterance.pitch = 0.95;
-
-        if (index === 0) {
-            utterance.onstart = () => {
-                btnText.textContent = 'Stop Reading';
-                readBtn.firstElementChild.textContent = '⏹️';
-                readBtn.classList.add('speaking');
-            };
-        }
-
-        if (index === textChunks.length - 1) {
-            utterance.onend = resetButtonUI;
-            utterance.onerror = resetButtonUI;
-        }
-
-        window.speechSynthesis.speak(utterance);
-    });
-});
-
-function resetButtonUI() {
-    btnText.textContent = 'Read Aloud';
-    readBtn.firstElementChild.textContent = '🔊';
-    readBtn.classList.remove('speaking');
-}
     </script>
 </body>
 </html>

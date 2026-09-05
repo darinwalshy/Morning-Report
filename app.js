@@ -1,8 +1,7 @@
-// 1. Target your actual deployed Cloud Function, not the GitHub Pages site URL
 const FUNCTION_URL = "https://us-central1-morning-report-3afe0.cloudfunctions.net/generateBriefing";
 
-// 2. Handle Login Form Submission
-document.getElementById("login-form").addEventListener("submit", async (e) => {
+// 1. Handle Login Form Submission
+document.getElementById("login-form")?.addEventListener("submit", async (e) => {
   e.preventDefault();
   const email = document.getElementById("email-input").value.trim();
   const password = document.getElementById("password-input").value;
@@ -18,7 +17,7 @@ document.getElementById("login-form").addEventListener("submit", async (e) => {
   }
 });
 
-// 3. Track Auth State Changes (Auto-login & Session Management)
+// 2. Track Auth State Changes
 window.onAuthStateChanged(window.auth, (user) => {
   const loginView = document.getElementById("login-container");
   const appView = document.getElementById("app-container");
@@ -26,18 +25,19 @@ window.onAuthStateChanged(window.auth, (user) => {
   if (user) {
     loginView.style.display = "none";
     appView.style.display = "block";
+    fetchBriefing();
   } else {
     loginView.style.display = "block";
     appView.style.display = "none";
   }
 });
 
-// 4. Handle Logout
-document.getElementById("logout-btn").addEventListener("click", () => {
+// 3. Handle Logout
+document.getElementById("logout-btn")?.addEventListener("click", () => {
   window.signOut(window.auth);
 });
 
-// 5. Authenticated Request to Cloud Function
+// 4. Authenticated Request to Cloud Function
 async function fetchBriefing() {
   const user = window.auth.currentUser;
   if (!user) {
@@ -45,12 +45,14 @@ async function fetchBriefing() {
     return;
   }
 
-  const outputElement = document.getElementById("briefing-output");
-  outputElement.textContent = "Loading briefing...";
+  const reportText = document.getElementById("reportText");
+  if (reportText) {
+    reportText.classList.add("loading-text");
+    reportText.textContent = "Fetching your briefing from Gemini...";
+  }
 
   try {
-    // Retrieve fresh active Firebase ID Token
-    const idToken = await user.getIdToken(/* forceRefresh */ true);
+    const idToken = await user.getIdToken(true);
 
     const response = await fetch(FUNCTION_URL, {
       method: "POST",
@@ -62,16 +64,113 @@ async function fetchBriefing() {
     });
 
     if (!response.ok) {
-      throw new Error(`Server returned status ${response.status}`);
+      throw new Error(`Server status: ${response.status}`);
     }
 
     const data = await response.json();
-    outputElement.textContent = JSON.stringify(data, null, 2);
+    if (reportText) {
+      reportText.classList.remove("loading-text");
+      reportText.textContent = data.message || data.text || JSON.stringify(data, null, 2);
+    }
   } catch (error) {
     console.error("Failed to generate briefing:", error);
-    outputElement.textContent = `Error: ${error.message}`;
+    if (reportText) {
+      reportText.classList.remove("loading-text");
+      reportText.textContent = `Unable to connect to briefing service (${error.message}).`;
+    }
   }
 }
 
-// Attach listener to button
-document.getElementById("generate-briefing-btn").addEventListener("click", fetchBriefing);
+// Attach listener to Refresh button
+document.getElementById("refreshBtn")?.addEventListener("click", fetchBriefing);
+
+// 5. Speech Synthesis Setup
+const readBtn = document.getElementById("readBtn");
+const btnText = document.getElementById("btnText");
+let availableVoices = [];
+
+function loadVoices() {
+  if ("speechSynthesis" in window) {
+    availableVoices = window.speechSynthesis.getVoices();
+  }
+}
+
+loadVoices();
+if ("speechSynthesis" in window && window.speechSynthesis.onvoiceschanged !== undefined) {
+  window.speechSynthesis.onvoiceschanged = loadVoices;
+}
+
+function getBestVoice() {
+  if (!availableVoices.length) return null;
+
+  let chosenVoice = availableVoices.find(
+    (v) =>
+      v.lang.startsWith("en") &&
+      v.name.includes("Google") &&
+      (v.name.includes("network") || v.name.includes("Online") || v.name.includes("Natural"))
+  );
+
+  if (!chosenVoice) {
+    chosenVoice = availableVoices.find((v) => v.name.includes("Google") && v.lang.startsWith("en"));
+  }
+
+  if (!chosenVoice) {
+    chosenVoice = availableVoices.find((v) => v.lang.startsWith("en"));
+  }
+
+  return chosenVoice || availableVoices[0];
+}
+
+function resetButtonUI() {
+  if (btnText && readBtn) {
+    btnText.textContent = "Read Aloud";
+    readBtn.firstElementChild.textContent = "🔊";
+    readBtn.classList.remove("speaking");
+  }
+}
+
+readBtn?.addEventListener("click", () => {
+  const reportText = document.getElementById("reportText");
+  if (!("speechSynthesis" in window)) {
+    alert("Text-to-speech is not supported in this browser.");
+    return;
+  }
+
+  if (window.speechSynthesis.speaking) {
+    window.speechSynthesis.cancel();
+    resetButtonUI();
+    return;
+  }
+
+  const textToRead = reportText?.innerText || "";
+  if (!textToRead) return;
+
+  const textChunks = textToRead.match(/[^.!?]+[.!?]+/g) || [textToRead];
+  const chosenVoice = getBestVoice();
+
+  textChunks.forEach((chunk, index) => {
+    const utterance = new SpeechSynthesisUtterance(chunk.trim());
+
+    if (chosenVoice) {
+      utterance.voice = chosenVoice;
+    }
+
+    utterance.rate = 0.92;
+    utterance.pitch = 0.95;
+
+    if (index === 0) {
+      utterance.onstart = () => {
+        btnText.textContent = "Stop Reading";
+        readBtn.firstElementChild.textContent = "⏹️";
+        readBtn.classList.add("speaking");
+      };
+    }
+
+    if (index === textChunks.length - 1) {
+      utterance.onend = resetButtonUI;
+      utterance.onerror = resetButtonUI;
+    }
+
+    window.speechSynthesis.speak(utterance);
+  });
+});
