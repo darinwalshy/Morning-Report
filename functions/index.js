@@ -1,3 +1,5 @@
+// index.js
+
 import { initializeApp } from "firebase-admin/app";
 import { getAuth } from "firebase-admin/auth";
 import { getAppCheck } from "firebase-admin/app-check";
@@ -8,13 +10,14 @@ import { GoogleGenAI } from "@google/genai";
 initializeApp();
 
 const db = getFirestore("morningreport");
-
-// Configuration
-const ALLOWED_ORIGIN = "https://darinwalshy.github.io"; // REPLACE with your actual GitHub Pages URL
+const ALLOWED_ORIGIN = "https://darinwalshy.github.io";
 const MAX_DAILY_REQUESTS = 50;
 
-export const generateBriefing = functions.https.onRequest(async (req, res) => {
-  // 1. Hardened CORS
+export const generateBriefing = functions.https.onRequest(
+  { secrets: ["GEMINI_API_KEY"] },
+  async (req, res) => {
+  // ... rest of your code ...
+  // 1. CORS Setup
   const origin = req.headers.origin;
   if (origin === ALLOWED_ORIGIN) {
     res.set("Access-Control-Allow-Origin", ALLOWED_ORIGIN);
@@ -35,14 +38,15 @@ export const generateBriefing = functions.https.onRequest(async (req, res) => {
     }
 
     try {
-      await getAppCheck().verifyToken(appCheckToken);
+      // Decode and verify the App Check token
+      const appCheckClaims = await getAppCheck().verifyToken(appCheckToken);
     } catch (appCheckErr) {
-      console.error("App Check verification failed:", appCheckErr);
+      console.error("App Check verification details:", appCheckErr);
       res.status(401).json({ error: "Unauthorized: Invalid App Check token." });
       return;
     }
 
-    // 3. Verify Firebase Auth ID Token
+    // 3. Verify Auth Token
     const authHeader = req.headers.authorization;
     if (!authHeader || !authHeader.startsWith("Bearer ")) {
       res.status(401).json({ error: "Unauthorized: Missing or invalid token format." });
@@ -53,13 +57,12 @@ export const generateBriefing = functions.https.onRequest(async (req, res) => {
     const decodedToken = await getAuth().verifyIdToken(idToken);
     const userId = decodedToken.uid;
 
-    // 4. Firestore Daily Rate Limiting
-    const todayStr = new Date().toISOString().split("T")[0]; // YYYY-MM-DD
+    // 4. Rate Limiting
+    const todayStr = new Date().toISOString().split("T")[0];
     const rateLimitRef = db.collection("rate_limits").doc(`${userId}_${todayStr}`);
-    
     const rateLimitDoc = await rateLimitRef.get();
+    
     let currentCount = 0;
-
     if (rateLimitDoc.exists) {
       currentCount = rateLimitDoc.data().count || 0;
     }
@@ -69,7 +72,6 @@ export const generateBriefing = functions.https.onRequest(async (req, res) => {
       return;
     }
 
-    // Update or increment request count
     await rateLimitRef.set({
       count: FieldValue.increment(1),
       userId: userId,
@@ -77,10 +79,13 @@ export const generateBriefing = functions.https.onRequest(async (req, res) => {
       lastRequestTime: FieldValue.serverTimestamp()
     }, { merge: true });
 
-    // 5. Initialize Gemini SDK inside handler and execute call
+    // 5. Generate Content
     const apiKey = process.env.GEMINI_API_KEY;
-    const ai = new GoogleGenAI(apiKey ? { apiKey } : {});
+    if (!apiKey) {
+      throw new Error("GEMINI_API_KEY environment variable is missing.");
+    }
 
+    const ai = new GoogleGenAI({ apiKey });
     const prompt = "Provide a concise, encouraging 3-sentence morning briefing focused on productivity, clarity, and starting the day strong.";
     
     const response = await ai.models.generateContent({
@@ -88,7 +93,6 @@ export const generateBriefing = functions.https.onRequest(async (req, res) => {
       contents: prompt,
     });
 
-    // 6. Return Briefing
     res.status(200).json({
       success: true,
       text: response.text,
@@ -96,7 +100,8 @@ export const generateBriefing = functions.https.onRequest(async (req, res) => {
     });
 
   } catch (error) {
-    console.error("Error running briefing endpoint:", error);
-    res.status(500).json({ error: "Failed to generate briefing." });
+    // Detailed logging to locate runtime crashes
+    console.error("Error in generateBriefing function:", error);
+    res.status(500).json({ error: error.message || "Failed to generate briefing." });
   }
 });
