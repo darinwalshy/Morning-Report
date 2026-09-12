@@ -28,8 +28,14 @@ export const generateBriefing = functions.https.onRequest(
     return;
   }
 
+  // Enforce HTTP POST
+  if (req.method !== "POST") {
+    res.status(405).json({ error: "Method Not Allowed" });
+    return;
+  }
+
   try {
-    // 2. Verify App Check Token (REPLACE THIS ENTIRE BLOCK)
+    // 2. Verify App Check Token
     const appCheckToken = req.headers["x-firebase-appcheck"];
 
     if (!appCheckToken || appCheckToken === "undefined" || appCheckToken === "null") {
@@ -56,27 +62,35 @@ export const generateBriefing = functions.https.onRequest(
     const decodedToken = await getAuth().verifyIdToken(idToken);
     const userId = decodedToken.uid;
 
-    // 4. Rate Limiting
+    // 4. Atomic Rate Limiting via Firestore Transaction
     const todayStr = new Date().toISOString().split("T")[0];
     const rateLimitRef = db.collection("rate_limits").doc(`${userId}_${todayStr}`);
-    const rateLimitDoc = await rateLimitRef.get();
-    
-    let currentCount = 0;
-    if (rateLimitDoc.exists) {
-      currentCount = rateLimitDoc.data().count || 0;
-    }
 
-    if (currentCount >= MAX_DAILY_REQUESTS) {
-      res.status(429).json({ error: "Daily briefing request limit reached. Try again tomorrow." });
-      return;
-    }
+    try {
+      await db.runTransaction(async (transaction) => {
+        const rateLimitDoc = await transaction.get(rateLimitRef);
+        const currentCount = rateLimitDoc.exists ? (rateLimitDoc.data().count || 0) : 0;
 
-    await rateLimitRef.set({
-      count: FieldValue.increment(1),
-      userId: userId,
-      date: todayStr,
-      lastRequestTime: FieldValue.serverTimestamp()
-    }, { merge: true });
+        if (currentCount >= MAX_DAILY_REQUESTS) {
+          const limitError = new Error("RATE_LIMIT_EXCEEDED");
+          limitError.code = "LIMIT_EXCEEDED";
+          throw limitError;
+        }
+
+        transaction.set(rateLimitRef, {
+          count: currentCount + 1,
+          userId: userId,
+          date: todayStr,
+          lastRequestTime: FieldValue.serverTimestamp()
+        }, { merge: true });
+      });
+    } catch (transactionErr) {
+      if (transactionErr.code === "LIMIT_EXCEEDED") {
+        res.status(429).json({ error: "Daily briefing request limit reached. Try again tomorrow." });
+        return;
+      }
+      throw transactionErr;
+    }
 
     // 5. Generate Content
     const apiKey = process.env.GEMINI_API_KEY;
@@ -94,12 +108,11 @@ export const generateBriefing = functions.https.onRequest(
 
     res.status(200).json({
       success: true,
-      text: response.text,
-      user: userId
+      text: response.text
     });
 
   } catch (error) {
     console.error("Error in generateBriefing function:", error);
-    res.status(500).json({ error: error.message || "Failed to generate briefing." });
+    res.status(500).json({ error: "Failed to generate briefing." });
   }
 });
