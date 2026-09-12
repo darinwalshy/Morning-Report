@@ -8,6 +8,7 @@ const CACHE_NAME = APP_PREFIX + 'cache';
 // Exact GitHub repository name matching your URL path
 const REPO_NAME = '/Morning-Report';      
 
+
 const ASSETS = [
   `${REPO_NAME}/`,
   `${REPO_NAME}/index.html`,
