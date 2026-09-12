@@ -37,7 +37,7 @@ document.getElementById("logout-btn")?.addEventListener("click", () => {
   window.signOut(window.auth);
 });
 
-// 4. Authenticated Request to Cloud Function
+// 4. Authenticated & AppCheck-Protected Request to Cloud Function
 async function fetchBriefing() {
   const user = window.auth.currentUser;
   if (!user) {
@@ -53,18 +53,32 @@ async function fetchBriefing() {
 
   try {
     const idToken = await user.getIdToken(true);
+    
+    // Fetch App Check Token
+    let appCheckTokenResult = null;
+    if (window.appCheck) {
+      const { getToken } = await import("https://www.gstatic.com/firebasejs/10.8.0/firebase-app-check.js");
+      appCheckTokenResult = await getToken(window.appCheck, /* forceRefresh= */ false);
+    }
+
+    const headers = {
+      "Content-Type": "application/json",
+      "Authorization": `Bearer ${idToken}`
+    };
+
+    if (appCheckTokenResult && appCheckTokenResult.token) {
+      headers["X-Firebase-AppCheck"] = appCheckTokenResult.token;
+    }
 
     const response = await fetch(FUNCTION_URL, {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "Authorization": `Bearer ${idToken}`
-      },
+      headers: headers,
       body: JSON.stringify({ action: "generate" })
     });
 
     if (!response.ok) {
-      throw new Error(`Server status: ${response.status}`);
+      const errorData = await response.json().catch(() => ({}));
+      throw new Error(errorData.error || `Server status: ${response.status}`);
     }
 
     const data = await response.json();

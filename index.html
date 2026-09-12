@@ -173,13 +173,14 @@
         }
     </style>
 
-    <!-- Firebase App and Auth SDKs (v10 modular CDN) -->
+    <!-- Firebase App, Auth, and App Check SDKs (v10 modular CDN) -->
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
         import { getAuth, signInWithEmailAndPassword, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js";
+        import { initializeAppCheck, ReCaptchaEnterpriseProvider } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app-check.js";
 
         const firebaseConfig = {
-            apiKey: "AIzaSyC0iK84tNEKviLofj2QCDDstW-zH-mOI-s",
+            apiKey: "AIzaSyC0iK84tNEKviLoxj2QCDDstW-zH-mOI-s",
             authDomain: "morning-report-3afe0.firebaseapp.com",
             projectId: "morning-report-3afe0",
             storageBucket: "morning-report-3afe0.firebasestorage.app",
@@ -190,7 +191,14 @@
         const app = initializeApp(firebaseConfig);
         const auth = getAuth(app);
 
+        // Initialize App Check with reCAPTCHA Enterprise
+        const appCheck = initializeAppCheck(app, {
+            provider: new ReCaptchaEnterpriseProvider(6LdigrctAAAAAOVGLfETLltf1eRMNiYSA1CfBVGF),
+            isTokenAutoRefreshEnabled: true
+        });
+
         window.auth = auth;
+        window.appCheck = appCheck;
         window.signInWithEmailAndPassword = signInWithEmailAndPassword;
         window.onAuthStateChanged = onAuthStateChanged;
         window.signOut = signOut;
