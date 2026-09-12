@@ -16,7 +16,6 @@ const MAX_DAILY_REQUESTS = 50;
 export const generateBriefing = functions.https.onRequest(
   { secrets: ["GEMINI_API_KEY"] },
   async (req, res) => {
-  // ... rest of your code ...
   // 1. CORS Setup
   const origin = req.headers.origin;
   if (origin === ALLOWED_ORIGIN) {
@@ -30,18 +29,18 @@ export const generateBriefing = functions.https.onRequest(
   }
 
   try {
-    // 2. Verify App Check Token
+    // 2. Verify App Check Token (REPLACE THIS ENTIRE BLOCK)
     const appCheckToken = req.headers["x-firebase-appcheck"];
-    if (!appCheckToken) {
-      res.status(401).json({ error: "Unauthorized: Missing App Check token." });
+
+    if (!appCheckToken || appCheckToken === "undefined" || appCheckToken === "null") {
+      res.status(401).json({ error: "Unauthorized: Missing or invalid App Check token." });
       return;
     }
 
     try {
-      // Decode and verify the App Check token
-      const appCheckClaims = await getAppCheck().verifyToken(appCheckToken);
+      await getAppCheck().verifyToken(appCheckToken);
     } catch (appCheckErr) {
-      console.error("App Check verification details:", appCheckErr);
+      console.error("App Check verification failed:", appCheckErr);
       res.status(401).json({ error: "Unauthorized: Invalid App Check token." });
       return;
     }
@@ -100,7 +99,6 @@ export const generateBriefing = functions.https.onRequest(
     });
 
   } catch (error) {
-    // Detailed logging to locate runtime crashes
     console.error("Error in generateBriefing function:", error);
     res.status(500).json({ error: error.message || "Failed to generate briefing." });
   }
