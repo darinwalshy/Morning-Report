@@ -10,7 +10,7 @@ initializeApp();
 const db = getFirestore("morningreport");
 
 // Configuration
-const ALLOWED_ORIGIN = "https://darinwalshy.github.io/Morning-Report/"; // REPLACE with your actual GitHub Pages URL
+const ALLOWED_ORIGIN = "https://darinwalshy.github.io"; // REPLACE with your actual GitHub Pages URL
 const MAX_DAILY_REQUESTS = 50;
 
 export const generateBriefing = functions.https.onRequest(async (req, res) => {

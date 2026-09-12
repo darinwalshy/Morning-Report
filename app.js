@@ -54,11 +54,10 @@ async function fetchBriefing() {
   try {
     const idToken = await user.getIdToken(true);
     
-    // Fetch App Check Token
+    // Fetch App Check Token via global helper initialized in index.html
     let appCheckTokenResult = null;
-    if (window.appCheck) {
-      const { getToken } = await import("https://www.gstatic.com/firebasejs/10.8.0/firebase-app-check.js");
-      appCheckTokenResult = await getToken(window.appCheck, /* forceRefresh= */ false);
+    if (window.appCheck && window.getAppCheckToken) {
+      appCheckTokenResult = await window.getAppCheckToken(window.appCheck, /* forceRefresh= */ false);
     }
 
     const headers = {

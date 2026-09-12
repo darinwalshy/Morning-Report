@@ -3,6 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="default">
     <meta name="apple-mobile-web-app-title" content="Morning Report">
@@ -173,11 +174,11 @@
         }
     </style>
 
-    <!-- Firebase App, Auth, and App Check SDKs (v10 modular CDN) -->
+    <!-- index.html -->
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
         import { getAuth, signInWithEmailAndPassword, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js";
-        import { initializeAppCheck, ReCaptchaEnterpriseProvider } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app-check.js";
+        import { initializeAppCheck, ReCaptchaV3Provider, getToken } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app-check.js";
 
         const firebaseConfig = {
             apiKey: "AIzaSyC0iK84tNEKviLoxj2QCDDstW-zH-mOI-s",
@@ -191,14 +192,15 @@
         const app = initializeApp(firebaseConfig);
         const auth = getAuth(app);
 
-        // Initialize App Check with reCAPTCHA Enterprise
+        // Initialize App Check with reCAPTCHA v3 Site Key
         const appCheck = initializeAppCheck(app, {
-            provider: new ReCaptchaEnterpriseProvider('6LdigrctAAAAAOVGLfETLltf1eRMNiYSA1CfBVGF'),
+            provider: new ReCaptchaV3Provider('6LdigrctAAAAAOVGLfETLltf1eRMNiYSA1CfBVGF'),
             isTokenAutoRefreshEnabled: true
         });
 
         window.auth = auth;
         window.appCheck = appCheck;
+        window.getAppCheckToken = getToken; // Export getToken helper
         window.signInWithEmailAndPassword = signInWithEmailAndPassword;
         window.onAuthStateChanged = onAuthStateChanged;
         window.signOut = signOut;
