@@ -173,19 +173,26 @@
             margin-bottom: 12px;
         }
     </style>
-    
+
     <!-- index.html -->
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
         import { getAuth, signInWithEmailAndPassword, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js";
         import { initializeAppCheck, ReCaptchaEnterpriseProvider, getToken } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app-check.js";
 
-        const firebaseConfig = { ... };
+        const firebaseConfig = {
+            apiKey: "AIzaSyC0iK84tNEKviLoxj2QCDDstW-zH-mOI-s",
+            authDomain: "morning-report-3afe0.firebaseapp.com",
+            projectId: "morning-report-3afe0",
+            storageBucket: "morning-report-3afe0.firebasestorage.app",
+            messagingSenderId: "331945301361",
+            appId: "1:331945301361:web:689ac442d27da5d9fe12d0"
+        };
 
         const app = initializeApp(firebaseConfig);
         const auth = getAuth(app);
 
-        // Initialize App Check using Enterprise Provider
+        // Initialize App Check with reCAPTCHA Enterprise Provider
         const appCheck = initializeAppCheck(app, {
             provider: new ReCaptchaEnterpriseProvider('6LdigrctAAAAAOVGLfETLltf1eRMNiYSA1CfBVGF'),
             isTokenAutoRefreshEnabled: true
@@ -205,7 +212,7 @@
     <header>
         <div class="header-top">
             <h1>Morning Report</h1>
-            <span class="version-badge" id="appVersion">v1.09</span>
+            <span class="version-badge" id="appVersion">v1.10</span>
         </div>
     </header>
 
