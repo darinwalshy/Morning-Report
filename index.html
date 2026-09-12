@@ -173,34 +173,27 @@
             margin-bottom: 12px;
         }
     </style>
-
+    
     <!-- index.html -->
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
         import { getAuth, signInWithEmailAndPassword, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js";
-        import { initializeAppCheck, ReCaptchaV3Provider, getToken } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app-check.js";
+        import { initializeAppCheck, ReCaptchaEnterpriseProvider, getToken } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app-check.js";
 
-        const firebaseConfig = {
-            apiKey: "AIzaSyC0iK84tNEKviLoxj2QCDDstW-zH-mOI-s",
-            authDomain: "morning-report-3afe0.firebaseapp.com",
-            projectId: "morning-report-3afe0",
-            storageBucket: "morning-report-3afe0.firebasestorage.app",
-            messagingSenderId: "331945301361",
-            appId: "1:331945301361:web:689ac442d27da5d9fe12d0"
-        };
+        const firebaseConfig = { ... };
 
         const app = initializeApp(firebaseConfig);
         const auth = getAuth(app);
 
-        // Initialize App Check with reCAPTCHA v3 Site Key
+        // Initialize App Check using Enterprise Provider
         const appCheck = initializeAppCheck(app, {
-            provider: new ReCaptchaV3Provider('6LdigrctAAAAAOVGLfETLltf1eRMNiYSA1CfBVGF'),
+            provider: new ReCaptchaEnterpriseProvider('6LdigrctAAAAAOVGLfETLltf1eRMNiYSA1CfBVGF'),
             isTokenAutoRefreshEnabled: true
         });
 
         window.auth = auth;
         window.appCheck = appCheck;
-        window.getAppCheckToken = getToken; // Export getToken helper
+        window.getAppCheckToken = getToken;
         window.signInWithEmailAndPassword = signInWithEmailAndPassword;
         window.onAuthStateChanged = onAuthStateChanged;
         window.signOut = signOut;
