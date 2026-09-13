@@ -75,21 +75,23 @@ async function fetchBriefing() {
       body: JSON.stringify({ action: "generate" })
     });
 
+    const data = await response.json().catch(() => ({}));
+
     if (!response.ok) {
-      const errorData = await response.json().catch(() => ({}));
-      throw new Error(errorData.error || `Server status: ${response.status}`);
+      throw new Error(data.error || `Server status: ${response.status}`);
     }
 
-    const data = await response.json();
     if (reportText) {
       reportText.classList.remove("loading-text");
-      reportText.textContent = data.message || data.text || JSON.stringify(data, null, 2);
+      // Strip markdown asterisks for clean visual rendering while preserving headings
+      const rawText = data.text || data.message || "";
+      reportText.textContent = rawText.replace(/\*\*/g, "");
     }
   } catch (error) {
     console.error("Failed to generate briefing:", error);
     if (reportText) {
       reportText.classList.remove("loading-text");
-      reportText.textContent = `Unable to connect to briefing service (${error.message}).`;
+      reportText.textContent = `⚠️ Warning: ${error.message}`;
     }
   }
 }
