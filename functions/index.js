@@ -167,7 +167,7 @@ Max Wind Speed: ${windSpeed} km/h
         return;
       }
 
-      // 6. Generate Content via Gemini API
+      // 6. Generate Content via Gemini API with Google Search Grounding
       const apiKey = process.env.GEMINI_API_KEY;
       if (!apiKey) {
         throw new Error("GEMINI_API_KEY environment variable is missing.");
@@ -176,18 +176,27 @@ Max Wind Speed: ${windSpeed} km/h
       const ai = new GoogleGenAI({ apiKey });
       const prompt = `
 You are a warm, helpful personal morning assistant.
+
 Below is today's raw weather data for Entebbe Airport:
 ${weatherContext}
 
-Generate a conversational morning report structured into two distinct sections:
+Search live news outlets for top current stories out of Uganda (or major regional East African / global news strongly impacting Uganda).
+
+Generate a daily morning report structured into exactly three distinct sections:
 
 1. **Weather Overview**: Synthesize the weather data into a friendly, clear, natural narrative. Cover the current temp, daily high/low, rain probability, wind speed, and general conditions. Use Celsius for all temperatures.
-2. **Daily Briefing**: A concise, encouraging 3-sentence morning briefing focused on productivity, clarity, and starting the day strong.
+
+2. **Key News Highlights**: Search for up to 5 of the top pertinent news items originating from or strongly affecting Uganda today. For each story, provide a thorough 4 to 5 sentence summary explaining what happened and why it matters. If fewer than 5 major stories are available on a light news day, provide as many as are relevant (down to 1). If live news search yields no results or fails, output: "News highlights are currently unavailable."
+
+3. **Daily Briefing**: A concise, encouraging 3-sentence morning briefing focused on productivity, clarity, and starting the day strong.
       `.trim();
 
       const response = await ai.models.generateContent({
         model: "gemini-3.6-flash",
         contents: prompt,
+        config: {
+          tools: [{ googleSearch: {} }]
+        }
       });
 
       res.status(200).json({
