@@ -144,6 +144,8 @@ function resetButtonUI() {
   }
 }
 
+// app.js (Excerpt of the Speech Synthesis Listener)
+
 readBtn?.addEventListener("click", () => {
   const reportText = document.getElementById("reportText");
   if (!("speechSynthesis" in window)) {
@@ -157,8 +159,11 @@ readBtn?.addEventListener("click", () => {
     return;
   }
 
-  const textToRead = reportText?.innerText || "";
-  if (!textToRead) return;
+  const rawTextToRead = reportText?.innerText || "";
+  if (!rawTextToRead) return;
+
+  // Transform decimal points in numbers so TTS speaks them naturally (e.g., "25.6" -> "25 point 6")
+  const textToRead = rawTextToRead.replace(/(\d+)\.(\d+)/g, "$1 point $2");
 
   const textChunks = textToRead.match(/[^.!?]+[.!?]+/g) || [textToRead];
   const chosenVoice = getBestVoice();

@@ -7,13 +7,11 @@ import { getFirestore, FieldValue } from "firebase-admin/firestore";
 import * as functions from "firebase-functions";
 import { GoogleGenAI } from "@google/genai";
 
+// Initialize Firebase Admin at top level (lightweight metadata setup only)
 initializeApp();
 
-const db = getFirestore("morningreport");
 const ALLOWED_ORIGIN = "https://darinwalshy.github.io";
 const MAX_DAILY_REQUESTS = 50;
-
-// Hardcoded Location: Entebbe International Airport, Uganda
 const LATITUDE = 0.0436;
 const LONGITUDE = 32.4418;
 
@@ -52,6 +50,28 @@ function getWeatherCondition(code) {
   return weatherMap[code] || "Unknown weather conditions";
 }
 
+// Wind Direction Helper (Degrees to Cardinal Direction)
+function getWindDirection(degrees) {
+  if (degrees === undefined || degrees === null) return "Unknown";
+  const directions = ["N", "NNE", "NE", "ENE", "E", "ESE", "SE", "SSE", "S", "SSW", "SW", "WSW", "W", "WNW", "NW", "NNW"];
+  const index = Math.round(degrees / 22.5) % 16;
+  return `${directions[index]} (${degrees}°)`;
+}
+
+// Moon Phase Description Helper
+function getMoonPhaseDescription(phaseVal) {
+  if (phaseVal === undefined || phaseVal === null) return "Unknown";
+  if (phaseVal === 0 || phaseVal === 1) return "New Moon";
+  if (phaseVal > 0 && phaseVal < 0.25) return "Waxing Crescent";
+  if (phaseVal === 0.25) return "First Quarter (Half Moon)";
+  if (phaseVal > 0.25 && phaseVal < 0.5) return "Waxing Gibbous";
+  if (phaseVal === 0.5) return "Full Moon";
+  if (phaseVal > 0.5 && phaseVal < 0.75) return "Waning Gibbous";
+  if (phaseVal === 0.75) return "Third Quarter (Half Moon)";
+  if (phaseVal > 0.75 && phaseVal < 1) return "Waning Crescent";
+  return "Unknown";
+}
+
 export const generateBriefing = functions.https.onRequest(
   { secrets: ["GEMINI_API_KEY"] },
   async (req, res) => {
@@ -67,13 +87,15 @@ export const generateBriefing = functions.https.onRequest(
       return;
     }
 
-    // Enforce HTTP POST
     if (req.method !== "POST") {
       res.status(405).json({ error: "Method Not Allowed" });
       return;
     }
 
     try {
+      // Lazy load Firestore instance inside function execution context
+      const db = getFirestore("morningreport");
+
       // 2. Verify App Check Token
       const appCheckToken = req.headers["x-firebase-appcheck"];
 
@@ -101,7 +123,7 @@ export const generateBriefing = functions.https.onRequest(
       const decodedToken = await getAuth().verifyIdToken(idToken);
       const userId = decodedToken.uid;
 
-      // 4. Atomic Rate Limiting via Firestore Transaction
+      // 4. Rate Limiting via Firestore Transaction
       const todayStr = new Date().toISOString().split("T")[0];
       const rateLimitRef = db.collection("rate_limits").doc(`${userId}_${todayStr}`);
 
@@ -134,7 +156,7 @@ export const generateBriefing = functions.https.onRequest(
       // 5. Fetch Weather Data from Open-Meteo
       let weatherContext = "";
       try {
-        const weatherUrl = `https://api.open-meteo.com/v1/forecast?latitude=${LATITUDE}&longitude=${LONGITUDE}&current=temperature_2m,weather_code&daily=temperature_2m_max,temperature_2m_min,precipitation_probability_max,wind_speed_10m_max&temperature_unit=celsius&timezone=Africa%2FKampala`;
+        const weatherUrl = `https://api.open-meteo.com/v1/forecast?latitude=${LATITUDE}&longitude=${LONGITUDE}&current=temperature_2m,relative_humidity_2m,weather_code&daily=temperature_2m_max,temperature_2m_min,precipitation_probability_max,precipitation_sum,rain_sum,showers_sum,wind_speed_10m_max,wind_direction_10m_dominant,sunrise,sunset,moonrise,moonset,moon_phase&temperature_unit=celsius&timezone=Africa%2FKampala`;
         
         const weatherResponse = await fetch(weatherUrl);
         if (!weatherResponse.ok) {
@@ -144,21 +166,51 @@ export const generateBriefing = functions.https.onRequest(
         const weatherData = await weatherResponse.json();
 
         const currentTemp = weatherData.current?.temperature_2m;
+        const relativeHumidity = weatherData.current?.relative_humidity_2m;
         const weatherCode = weatherData.current?.weather_code;
+        const conditionText = getWeatherCondition(weatherCode);
+
         const tempMax = weatherData.daily?.temperature_2m_max?.[0];
         const tempMin = weatherData.daily?.temperature_2m_min?.[0];
         const precipProb = weatherData.daily?.precipitation_probability_max?.[0];
+        const precipSum = weatherData.daily?.precipitation_sum?.[0];
+        const rainSum = weatherData.daily?.rain_sum?.[0];
+        const showersSum = weatherData.daily?.showers_sum?.[0];
         const windSpeed = weatherData.daily?.wind_speed_10m_max?.[0];
+        const windDirDeg = weatherData.daily?.wind_direction_10m_dominant?.[0];
+        const windDirection = getWindDirection(windDirDeg);
 
-        const conditionText = getWeatherCondition(weatherCode);
+        const sunrise = weatherData.daily?.sunrise?.[0]?.split("T")[1] || "N/A";
+        const sunset = weatherData.daily?.sunset?.[0]?.split("T")[1] || "N/A";
+        const moonrise = weatherData.daily?.moonrise?.[0]?.split("T")[1] || "N/A";
+        const moonset = weatherData.daily?.moonset?.[0]?.split("T")[1] || "N/A";
+        const rawMoonPhase = weatherData.daily?.moon_phase?.[0];
+        const moonPhaseText = `${rawMoonPhase} (${getMoonPhaseDescription(rawMoonPhase)})`;
 
         weatherContext = `
-Current Temperature: ${currentTemp}°C
-Condition: ${conditionText}
-High Temp Today: ${tempMax}°C
-Low Temp Today: ${tempMin}°C
-Max Rain Probability: ${precipProb}%
-Max Wind Speed: ${windSpeed} km/h
+Basic Conditions & Comfort:
+- Current Temperature: ${currentTemp}°C
+- Condition: ${conditionText}
+- High Temp Today: ${tempMax}°C
+- Low Temp Today: ${tempMin}°C
+- Relative Humidity: ${relativeHumidity}%
+
+Precipitation:
+- Max Rain Probability: ${precipProb}%
+- Total Precipitation Sum: ${precipSum} mm
+- Rain Sum: ${rainSum} mm
+- Showers Sum: ${showersSum} mm
+
+Wind:
+- Max Wind Speed: ${windSpeed} km/h
+- Dominant Wind Direction: ${windDirection}
+
+Sun & Moon Dynamics:
+- Sunrise: ${sunrise}
+- Sunset: ${sunset}
+- Moonrise: ${moonrise}
+- Moonset: ${moonset}
+- Moon Phase: ${moonPhaseText}
         `.trim();
 
       } catch (weatherErr) {
@@ -167,7 +219,7 @@ Max Wind Speed: ${windSpeed} km/h
         return;
       }
 
-      // 6. Generate Content via Gemini API with Google Search Grounding
+      // 6. Generate Content via Gemini API
       const apiKey = process.env.GEMINI_API_KEY;
       if (!apiKey) {
         throw new Error("GEMINI_API_KEY environment variable is missing.");
@@ -184,7 +236,7 @@ Search live news outlets for top current stories out of Uganda (or major regiona
 
 Generate a daily morning report structured into exactly three distinct sections:
 
-1. **Weather Overview**: Synthesize the weather data into a friendly, clear, natural narrative. Cover the current temp, daily high/low, rain probability, wind speed, and general conditions. Use Celsius for all temperatures.
+1. **Weather Overview**: Synthesize the weather data into a friendly, clear, natural narrative without becoming overly verbose. Cover basic conditions, rainfall expectations, wind patterns, and light solar/lunar details naturally. Use Celsius for all temperatures.
 
 2. **Key News Highlights**: Search for up to 5 of the top pertinent news items originating from or strongly affecting Uganda today. For each story, provide a thorough 4 to 5 sentence summary explaining what happened and why it matters. If fewer than 5 major stories are available on a light news day, provide as many as are relevant (down to 1). If live news search yields no results or fails, output: "News highlights are currently unavailable."
 
