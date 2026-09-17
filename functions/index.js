@@ -201,12 +201,17 @@ Generate a daily morning report structured into exactly three distinct sections:
 
       const rawText = response.text || "";
 
-      // 7. Synthesize Audio via Google Cloud Text-to-Speech (Dynamically Imported)
+      // 7. Synthesize Audio via Google Cloud Text-to-Speech
       let audioBase64 = null;
       try {
         const { TextToSpeechClient } = await import("@google-cloud/text-to-speech");
         const ttsClient = new TextToSpeechClient();
-        const spokenText = rawText.replace(/\*\*/g, "");
+
+        // Strip Markdown symbols (#, *, _, `, ~) so TTS gets plain prose
+        const spokenText = rawText
+          .replace(/[#*_`~]/g, "")
+          .replace(/\s+/g, " ")
+          .trim();
 
         const ttsRequest = {
           input: { text: spokenText },
