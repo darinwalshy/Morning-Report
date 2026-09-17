@@ -201,17 +201,22 @@ Generate a daily morning report structured into exactly three distinct sections:
 
       const rawText = response.text || "";
 
-      // 7. Synthesize Audio via Google Cloud Text-to-Speech
+// 7. Synthesize Audio via Google Cloud Text-to-Speech (Dynamically Imported)
       let audioBase64 = null;
       try {
         const { TextToSpeechClient } = await import("@google-cloud/text-to-speech");
         const ttsClient = new TextToSpeechClient();
 
-        // Strip Markdown symbols (#, *, _, `, ~) so TTS gets plain prose
-        const spokenText = rawText
+        // Strip Markdown symbols and sanitize string
+        let spokenText = rawText
           .replace(/[#*_`~]/g, "")
           .replace(/\s+/g, " ")
           .trim();
+
+        // Hard cap at 4500 characters to stay safely under the 5000-byte limit
+        if (spokenText.length > 4500) {
+          spokenText = spokenText.slice(0, 4500);
+        }
 
         const ttsRequest = {
           input: { text: spokenText },
@@ -231,7 +236,8 @@ Generate a daily morning report structured into exactly three distinct sections:
           audioBase64 = Buffer.from(ttsResponse.audioContent).toString("base64");
         }
       } catch (ttsErr) {
-        console.error("Text-to-Speech synthesis failed:", ttsErr);
+        // Log explicitly to Firebase Logs console
+        console.error("CRITICAL TTS ERROR:", ttsErr.message, ttsErr.stack);
       }
 
       res.status(200).json({
