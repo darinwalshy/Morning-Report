@@ -221,8 +221,8 @@ Generate a daily morning report structured into exactly three distinct sections:
         const ttsRequest = {
           input: { text: spokenText },
           voice: {
-            languageCode: "en-GB",
-            name: "en-GB-Neural2-A",
+            languageCode: "en-US",
+            name: "en-US-Neural2-F",
             ssmlGender: "FEMALE"
           },
           audioConfig: {
