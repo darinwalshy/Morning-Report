@@ -1,5 +1,8 @@
 const FUNCTION_URL = "https://us-central1-morning-report-3afe0.cloudfunctions.net/generateBriefing";
 
+let currentAudio = null;
+let currentAudioBase64 = null;
+
 // 1. Handle Login Form Submission
 document.getElementById("login-form")?.addEventListener("submit", async (e) => {
   e.preventDefault();
@@ -34,8 +37,23 @@ window.onAuthStateChanged(window.auth, (user) => {
 
 // 3. Handle Logout
 document.getElementById("logout-btn")?.addEventListener("click", () => {
+  if (currentAudio) {
+    currentAudio.pause();
+    currentAudio = null;
+  }
   window.signOut(window.auth);
 });
+
+// Helper: Reset Read Aloud Button State
+function resetButtonUI() {
+  const readBtn = document.getElementById("readBtn");
+  const btnText = document.getElementById("btnText");
+  if (btnText && readBtn) {
+    btnText.textContent = "Read Aloud";
+    readBtn.firstElementChild.textContent = "🔊";
+    readBtn.classList.remove("speaking");
+  }
+}
 
 // 4. Authenticated & AppCheck-Protected Request to Cloud Function
 async function fetchBriefing() {
@@ -44,6 +62,14 @@ async function fetchBriefing() {
     console.warn("Cannot generate briefing: No user authenticated.");
     return;
   }
+
+  // Reset audio playback if running
+  if (currentAudio) {
+    currentAudio.pause();
+    currentAudio = null;
+  }
+  currentAudioBase64 = null;
+  resetButtonUI();
 
   const reportText = document.getElementById("reportText");
   if (reportText) {
@@ -83,10 +109,14 @@ async function fetchBriefing() {
 
     if (reportText) {
       reportText.classList.remove("loading-text");
-      // Strip markdown asterisks for clean visual rendering while preserving headings
       const rawText = data.text || data.message || "";
       reportText.textContent = rawText.replace(/\*\*/g, "");
     }
+
+    if (data.audioBase64) {
+      currentAudioBase64 = data.audioBase64;
+    }
+
   } catch (error) {
     console.error("Failed to generate briefing:", error);
     if (reportText) {
@@ -99,98 +129,47 @@ async function fetchBriefing() {
 // Attach listener to Refresh button
 document.getElementById("refreshBtn")?.addEventListener("click", fetchBriefing);
 
-// 5. Speech Synthesis Setup
+// 5. Audio Playback via Google Cloud TTS MP3 Data
 const readBtn = document.getElementById("readBtn");
-const btnText = document.getElementById("btnText");
-let availableVoices = [];
-
-function loadVoices() {
-  if ("speechSynthesis" in window) {
-    availableVoices = window.speechSynthesis.getVoices();
-  }
-}
-
-loadVoices();
-if ("speechSynthesis" in window && window.speechSynthesis.onvoiceschanged !== undefined) {
-  window.speechSynthesis.onvoiceschanged = loadVoices;
-}
-
-function getBestVoice() {
-  if (!availableVoices.length) return null;
-
-  let chosenVoice = availableVoices.find(
-    (v) =>
-      v.lang.startsWith("en") &&
-      v.name.includes("Google") &&
-      (v.name.includes("network") || v.name.includes("Online") || v.name.includes("Natural"))
-  );
-
-  if (!chosenVoice) {
-    chosenVoice = availableVoices.find((v) => v.name.includes("Google") && v.lang.startsWith("en"));
-  }
-
-  if (!chosenVoice) {
-    chosenVoice = availableVoices.find((v) => v.lang.startsWith("en"));
-  }
-
-  return chosenVoice || availableVoices[0];
-}
-
-function resetButtonUI() {
-  if (btnText && readBtn) {
-    btnText.textContent = "Read Aloud";
-    readBtn.firstElementChild.textContent = "🔊";
-    readBtn.classList.remove("speaking");
-  }
-}
-
-// app.js (Excerpt of the Speech Synthesis Listener)
 
 readBtn?.addEventListener("click", () => {
-  const reportText = document.getElementById("reportText");
-  if (!("speechSynthesis" in window)) {
-    alert("Text-to-speech is not supported in this browser.");
-    return;
-  }
+  const btnText = document.getElementById("btnText");
 
-  if (window.speechSynthesis.speaking) {
-    window.speechSynthesis.cancel();
+  // If already playing, stop playback
+  if (currentAudio && !currentAudio.paused) {
+    currentAudio.pause();
+    currentAudio.currentTime = 0;
     resetButtonUI();
     return;
   }
 
-  const rawTextToRead = reportText?.innerText || "";
-  if (!rawTextToRead) return;
+  if (!currentAudioBase64) {
+    alert("Audio generation is not available for this report.");
+    return;
+  }
 
-  // Transform decimal points in numbers so TTS speaks them naturally (e.g., "25.6" -> "25 point 6")
-  const textToRead = rawTextToRead.replace(/(\d+)\.(\d+)/g, "$1 point $2");
+  // Initialize Audio instance if needed
+  if (!currentAudio) {
+    currentAudio = new Audio(`data:audio/mp3;base64,${currentAudioBase64}`);
 
-  const textChunks = textToRead.match(/[^.!?]+[.!?]+/g) || [textToRead];
-  const chosenVoice = getBestVoice();
+    currentAudio.onended = () => {
+      resetButtonUI();
+    };
 
-  textChunks.forEach((chunk, index) => {
-    const utterance = new SpeechSynthesisUtterance(chunk.trim());
+    currentAudio.onerror = (e) => {
+      console.error("Audio playback error:", e);
+      resetButtonUI();
+    };
+  }
 
-    if (chosenVoice) {
-      utterance.voice = chosenVoice;
+  currentAudio.play().then(() => {
+    if (btnText && readBtn) {
+      btnText.textContent = "Stop Reading";
+      readBtn.firstElementChild.textContent = "⏹️";
+      readBtn.classList.add("speaking");
     }
-
-    utterance.rate = 0.92;
-    utterance.pitch = 0.95;
-
-    if (index === 0) {
-      utterance.onstart = () => {
-        btnText.textContent = "Stop Reading";
-        readBtn.firstElementChild.textContent = "⏹️";
-        readBtn.classList.add("speaking");
-      };
-    }
-
-    if (index === textChunks.length - 1) {
-      utterance.onend = resetButtonUI;
-      utterance.onerror = resetButtonUI;
-    }
-
-    window.speechSynthesis.speak(utterance);
+  }).catch((err) => {
+    console.error("Failed to play audio:", err);
+    resetButtonUI();
   });
 });
