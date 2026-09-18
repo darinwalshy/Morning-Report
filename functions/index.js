@@ -66,11 +66,11 @@ function getMoonPhaseName(phase) {
   return "Unknown";
 }
 
-// Local 12-hour Time Formatter Helper
-function formatLocalTime(isoString) {
-  if (!isoString) return "N/A";
+// Local 12-hour Time Formatter Helper (Expects Unix Epoch in seconds or ISO)
+function formatLocalTime(timestamp) {
+  if (!timestamp) return "N/A";
   try {
-    const date = new Date(isoString);
+    const date = typeof timestamp === "number" ? new Date(timestamp * 1000) : new Date(timestamp);
     return new Intl.DateTimeFormat("en-US", {
       hour: "numeric",
       minute: "2-digit",
@@ -78,7 +78,7 @@ function formatLocalTime(isoString) {
       timeZone: "Africa/Kampala"
     }).format(date);
   } catch (e) {
-    return isoString;
+    return "N/A";
   }
 }
 
@@ -161,10 +161,10 @@ export const generateBriefing = functions.https.onRequest(
         throw transactionErr;
       }
 
-      // 5. Fetch Weather Data from Open-Meteo
+      // 5. Fetch Weather Data from Open-Meteo with Epoch Timestamps
       let weatherContext = "";
       try {
-        const weatherUrl = `https://api.open-meteo.com/v1/forecast?latitude=${LATITUDE}&longitude=${LONGITUDE}&current=temperature_2m,relative_humidity_2m,weather_code&daily=temperature_2m_max,temperature_2m_min,precipitation_probability_max,wind_speed_10m_max,sunrise,sunset,moonrise,moonset,moon_phase&temperature_unit=celsius&timezone=Africa%2FKampala`;
+        const weatherUrl = `https://api.open-meteo.com/v1/forecast?latitude=${LATITUDE}&longitude=${LONGITUDE}&current=temperature_2m,relative_humidity_2m,weather_code&daily=temperature_2m_max,temperature_2m_min,precipitation_probability_max,wind_speed_10m_max,sunrise,sunset,moonrise,moonset,moon_phase&temperature_unit=celsius&timeformat=unixtime&timezone=Africa%2FKampala`;
         
         const weatherResponse = await fetch(weatherUrl);
         if (!weatherResponse.ok) {
@@ -212,7 +212,7 @@ Moon Phase: ${moonPhaseName}
         return;
       }
 
-      // 6. Fetch Financial Data via yahoo-finance2
+      // 6. Fetch Financial Data via yahoo-finance2 with Fallbacks
       let financeContext = "";
       try {
         const { default: yahooFinance } = await import("yahoo-finance2");
@@ -234,11 +234,12 @@ Moon Phase: ${moonPhaseName}
 
         const financeLines = quotes.filter(q => q !== null).map(q => {
           const name = tickerNames[q.symbol] || q.symbol;
-          const price = q.regularMarketPrice?.toFixed(2) || "N/A";
-          const change = q.regularMarketChange?.toFixed(2) || "N/A";
-          const changePercent = q.regularMarketChangePercent?.toFixed(2) || "N/A";
-          const sign = q.regularMarketChange >= 0 ? "+" : "";
-          return `${name} (${q.symbol}): $${price} (${sign}${change}, ${sign}${changePercent}%)`;
+          const priceVal = q.regularMarketPrice ?? q.postMarketPrice ?? q.preMarketPrice ?? q.previousClose;
+          const price = typeof priceVal === "number" ? priceVal.toFixed(2) : "N/A";
+          const change = typeof q.regularMarketChange === "number" ? q.regularMarketChange.toFixed(2) : "N/A";
+          const changePercent = typeof q.regularMarketChangePercent === "number" ? q.regularMarketChangePercent.toFixed(2) : "N/A";
+          const sign = (q.regularMarketChange || 0) >= 0 ? "+" : "";
+          return `${name} (${q.symbol}):$${price} (${sign}${change}, ${sign}${changePercent}%)`;
         });
 
         if (financeLines.length > 0) {
@@ -269,13 +270,13 @@ ${financeContext}
 
 Search live news outlets for top current stories out of Uganda (or major regional East African / global news strongly impacting Uganda).
 
-Generate a daily morning report structured into exactly four distinct sections:
+Generate a daily morning report structured into exactly four distinct sections. DO NOT use markdown headers (such as # or ###). Use bold section titles instead:
 
 1. **Weather Overview**: Synthesize the weather data into a friendly, natural narrative. Cover current temperature, humidity, high/low range, rain odds, wind speed, sunrise/sunset times, and astronomical highlights (moonrise/moonset and phase). Use Celsius for all temperatures.
 
 2. **Market & Financial Summary**: Synthesize the provided asset metrics into a conversational overview detailing the latest prices and daily price changes for the S&P 500, NASDAQ, SPCX, and Rocket Lab. Conclude this section with 2–3 sentences explaining overall broader macro market dynamics driving these movements.
 
-3. **Key News Highlights**: Search for up to 5 of the top pertinent news items originating from or strongly affecting Uganda today. For each story, provide a thorough 4 to 5 sentence summary explaining what happened and why it matters. If fewer than 5 major stories are available on a light news day, provide as many as are relevant (down to 1). If live news search yields no results or fails, output: "News highlights are currently unavailable."
+3. **Key News Highlights**: Search for up to 5 of the top pertinent news items originating from or strongly affecting Uganda today. For each story, format it with a bullet point and bold title (e.g., "* **News Item 1: Headline Here**"), followed by a thorough 4 to 5 sentence summary explaining what happened and why it matters. If fewer than 5 major stories are available on a light news day, provide as many as are relevant (down to 1). If live news search yields no results or fails, output: "News highlights are currently unavailable."
 
 4. **Daily Briefing**: A concise, encouraging 3-sentence morning briefing focused on productivity, clarity, and starting the day strong.
       `.trim();
@@ -288,7 +289,10 @@ Generate a daily morning report structured into exactly four distinct sections:
         }
       });
 
-      const rawText = response.text || "";
+      let rawText = response.text || "";
+
+      // Sanitize any remaining heading hashes
+      rawText = rawText.replace(/^#+\s*/gm, "");
 
       // 8. Synthesize Audio via Google Cloud Text-to-Speech (en-US-Studio-O)
       let audioBase64 = null;
