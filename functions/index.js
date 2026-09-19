@@ -13,9 +13,11 @@ const db = getFirestore("morningreport");
 const ALLOWED_ORIGIN = "https://darinwalshy.github.io";
 const MAX_DAILY_REQUESTS = 50;
 
-// Hardcoded Location: Entebbe International Airport, Uganda
-const LATITUDE = 0.0436;
-const LONGITUDE = 32.4418;
+// Default Coordinates: Entebbe International Airport, Uganda
+const DEFAULT_LATITUDE = 0.0436;
+const DEFAULT_LONGITUDE = 32.4418;
+const DEFAULT_MODEL = "gemini-3.6-flash";
+const DEFAULT_VOICE = "en-US-Studio-O";
 
 // WMO Weather Code Translator Helper
 function getWeatherCondition(code) {
@@ -52,7 +54,7 @@ function getWeatherCondition(code) {
   return weatherMap[code] || "Unknown weather conditions";
 }
 
-// Moon Phase Translator Helper (0 to 1 float mapping)
+// Moon Phase Translator Helper
 function getMoonPhaseName(phase) {
   if (phase === undefined || phase === null) return "Unknown";
   if (phase === 0 || phase === 1) return "New Moon";
@@ -66,7 +68,7 @@ function getMoonPhaseName(phase) {
   return "Unknown";
 }
 
-// Local 12-hour Time Formatter Helper (Expects Unix Epoch in seconds or ISO)
+// Local 12-hour Time Formatter Helper
 function formatLocalTime(timestamp) {
   if (!timestamp) return "N/A";
   try {
@@ -97,7 +99,6 @@ export const generateBriefing = functions.https.onRequest(
       return;
     }
 
-    // Enforce HTTP POST
     if (req.method !== "POST") {
       res.status(405).json({ error: "Method Not Allowed" });
       return;
@@ -131,6 +132,14 @@ export const generateBriefing = functions.https.onRequest(
       const decodedToken = await getAuth().verifyIdToken(idToken);
       const userId = decodedToken.uid;
 
+      // Parse user settings from client payload
+      const userSettings = req.body.settings || {};
+      const userName = userSettings.userName ? userSettings.userName.trim() : "";
+      const latitude = typeof userSettings.latitude === "number" ? userSettings.latitude : DEFAULT_LATITUDE;
+      const longitude = typeof userSettings.longitude === "number" ? userSettings.longitude : DEFAULT_LONGITUDE;
+      const requestedModel = userSettings.model || DEFAULT_MODEL;
+      const requestedVoice = userSettings.voice || DEFAULT_VOICE;
+
       // 4. Atomic Rate Limiting via Firestore Transaction
       const todayStr = new Date().toISOString().split("T")[0];
       const rateLimitRef = db.collection("rate_limits").doc(`${userId}_${todayStr}`);
@@ -161,10 +170,10 @@ export const generateBriefing = functions.https.onRequest(
         throw transactionErr;
       }
 
-      // 5. Fetch Weather Data from Open-Meteo with Epoch Timestamps
+      // 5. Fetch Weather Data with Client Latitude/Longitude
       let weatherContext = "";
       try {
-        const weatherUrl = `https://api.open-meteo.com/v1/forecast?latitude=${LATITUDE}&longitude=${LONGITUDE}&current=temperature_2m,relative_humidity_2m,weather_code&daily=temperature_2m_max,temperature_2m_min,precipitation_probability_max,wind_speed_10m_max,sunrise,sunset,moonrise,moonset,moon_phase&temperature_unit=celsius&timeformat=unixtime&timezone=Africa%2FKampala`;
+        const weatherUrl = `https://api.open-meteo.com/v1/forecast?latitude=${latitude}&longitude=${longitude}&current=temperature_2m,relative_humidity_2m,weather_code&daily=temperature_2m_max,temperature_2m_min,precipitation_probability_max,wind_speed_10m_max,sunrise,sunset,moonrise,moonset,moon_phase&temperature_unit=celsius&timeformat=unixtime&timezone=Africa%2FKampala`;
         
         const weatherResponse = await fetch(weatherUrl);
         if (!weatherResponse.ok) {
@@ -192,6 +201,7 @@ export const generateBriefing = functions.https.onRequest(
         const conditionText = getWeatherCondition(weatherCode);
 
         weatherContext = `
+Location Coordinates: ${latitude},${longitude}
 Current Temperature: ${currentTemp}°C
 Humidity: ${currentHumidity}%
 Condition: ${conditionText}
@@ -212,7 +222,7 @@ Moon Phase: ${moonPhaseName}
         return;
       }
 
-      // 6. Fetch Financial Data via yahoo-finance2 with Fallbacks
+      // 6. Fetch Financial Data via yahoo-finance2
       let financeContext = "";
       try {
         const { default: YahooFinance } = await import("yahoo-finance2");
@@ -253,17 +263,19 @@ Moon Phase: ${moonPhaseName}
         financeContext = "Financial market data currently unavailable.";
       }
 
-      // 7. Generate Content via Gemini API with Google Search Grounding
+      // 7. Generate Content via Gemini API with Fallback Handling
       const apiKey = process.env.GEMINI_API_KEY;
       if (!apiKey) {
         throw new Error("GEMINI_API_KEY environment variable is missing.");
       }
 
       const ai = new GoogleGenAI({ apiKey });
-      const prompt = `
-You are a warm, helpful personal morning assistant.
+      const nameGreeting = userName ? `Address the user personally by their name: ${userName}.` : "Address the user in a warm, welcoming greeting.";
 
-Below is today's raw weather data for Entebbe Airport:
+      const prompt = `
+You are a warm, helpful personal morning assistant. ${nameGreeting}
+
+Below is today's raw weather data for the specified coordinates:
 ${weatherContext}
 
 Below is recent market data for key tracked assets:
@@ -282,52 +294,74 @@ Generate a daily morning report structured into exactly four distinct sections. 
 4. **Daily Briefing**: A concise, encouraging 3-sentence morning briefing focused on productivity, clarity, and starting the day strong.
       `.trim();
 
-      const response = await ai.models.generateContent({
-        model: "gemini-3.6-flash",
-        contents: prompt,
-        config: {
-          tools: [{ googleSearch: {} }]
-        }
-      });
+      let rawText = "";
+      let actualModelUsed = requestedModel;
+      let modelFallbackOccurred = false;
 
-      let rawText = response.text || "";
+      try {
+        const response = await ai.models.generateContent({
+          model: requestedModel,
+          contents: prompt,
+          config: {
+            tools: [{ googleSearch: {} }]
+          }
+        });
+        rawText = response.text || "";
+      } catch (geminiErr) {
+        console.error(`Requested model ${requestedModel} failed, falling back to${DEFAULT_MODEL}:`, geminiErr);
+        modelFallbackOccurred = true;
+        actualModelUsed = `${DEFAULT_MODEL} (fallback)`;
 
-      // Sanitize any remaining heading hashes
+        const fallbackResponse = await ai.models.generateContent({
+          model: DEFAULT_MODEL,
+          contents: prompt,
+          config: {
+            tools: [{ googleSearch: {} }]
+          }
+        });
+        rawText = fallbackResponse.text || "";
+      }
+
       rawText = rawText.replace(/^#+\s*/gm, "");
 
-      // 8. Synthesize Audio via Google Cloud Text-to-Speech (en-US-Studio-O)
+      // 8. Synthesize Audio via Google Cloud TTS with Fallback Handling
       let audioBase64 = null;
+      let actualVoiceUsed = requestedVoice;
+      let voiceFallbackOccurred = false;
+
       try {
         const { TextToSpeechClient } = await import("@google-cloud/text-to-speech");
         const ttsClient = new TextToSpeechClient();
 
-        // Strip Markdown symbols and sanitize string
         let spokenText = rawText
           .replace(/[#*_`~]/g, "")
           .replace(/\s+/g, " ")
           .trim();
 
-        // Hard cap at 4500 characters to stay safely under the 5000-byte limit
         if (spokenText.length > 4500) {
           spokenText = spokenText.slice(0, 4500);
         }
 
-        const ttsRequest = {
-          input: { text: spokenText },
-          voice: {
-            languageCode: "en-US",
-            name: "en-US-Studio-O"
-          },
-          audioConfig: {
-            audioEncoding: "MP3",
-            speakingRate: 1.0
-          }
+        const generateAudio = async (voiceName) => {
+          const langCode = voiceName.substring(0, 5);
+          const ttsRequest = {
+            input: { text: spokenText },
+            voice: { languageCode: langCode, name: voiceName },
+            audioConfig: { audioEncoding: "MP3", speakingRate: 1.0 }
+          };
+          const [ttsResponse] = await ttsClient.synthesizeSpeech(ttsRequest);
+          return ttsResponse.audioContent ? Buffer.from(ttsResponse.audioContent).toString("base64") : null;
         };
 
-        const [ttsResponse] = await ttsClient.synthesizeSpeech(ttsRequest);
-        if (ttsResponse.audioContent) {
-          audioBase64 = Buffer.from(ttsResponse.audioContent).toString("base64");
+        try {
+          audioBase64 = await generateAudio(requestedVoice);
+        } catch (requestedVoiceErr) {
+          console.error(`Requested TTS Voice ${requestedVoice} failed, falling back to ${DEFAULT_VOICE}:`, requestedVoiceErr);
+          voiceFallbackOccurred = true;
+          actualVoiceUsed = `${DEFAULT_VOICE} (fallback)`;
+          audioBase64 = await generateAudio(DEFAULT_VOICE);
         }
+
       } catch (ttsErr) {
         console.error("CRITICAL TTS ERROR:", ttsErr.message, ttsErr.stack);
       }
@@ -335,7 +369,13 @@ Generate a daily morning report structured into exactly four distinct sections. 
       res.status(200).json({
         success: true,
         text: rawText,
-        audioBase64: audioBase64
+        audioBase64: audioBase64,
+        meta: {
+          modelUsed: actualModelUsed,
+          voiceUsed: actualVoiceUsed,
+          modelFallback: modelFallbackOccurred,
+          voiceFallback: voiceFallbackOccurred
+        }
       });
 
     } catch (error) {

@@ -39,7 +39,7 @@
 
         .header-top {
             display: flex;
-            justify-content: center;
+            justify-content: space-between;
             align-items: center;
             position: relative;
         }
@@ -48,12 +48,29 @@
             font-size: 1.5rem;
             font-weight: 700;
             color: #0f172a;
-            text-align: center;
+        }
+
+        .header-actions {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .icon-btn {
+            background: none;
+            border: none;
+            font-size: 1.2rem;
+            cursor: pointer;
+            padding: 4px;
+            border-radius: 6px;
+            line-height: 1;
+        }
+
+        .icon-btn:hover {
+            background-color: #f1f5f9;
         }
 
         .version-badge {
-            position: absolute;
-            right: 0;
             font-size: 0.7rem;
             font-weight: 600;
             color: #64748b;
@@ -98,13 +115,38 @@
             white-space: pre-line;
         }
 
+        .card-footer {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            padding-top: 8px;
+            border-top: 1px dashed #e2e8f0;
+            margin-top: 4px;
+        }
+
+        .meta-badge {
+            font-size: 0.75rem;
+            font-weight: 500;
+            color: #475569;
+            background-color: #f1f5f9;
+            border: 1px solid #e2e8f0;
+            padding: 2px 8px;
+            border-radius: 6px;
+        }
+
+        .meta-badge.fallback {
+            background-color: #fef2f2;
+            border-color: #fca5a5;
+            color: #991b1b;
+        }
+
         .controls {
             display: flex;
             gap: 8px;
             align-items: center;
         }
 
-        .audio-btn, .refresh-btn, .btn-primary, .btn-danger {
+        .audio-btn, .refresh-btn, .btn-primary, .btn-secondary, .btn-danger {
             display: inline-flex;
             align-items: center;
             justify-content: center;
@@ -125,11 +167,15 @@
             background-color: #0284c7;
         }
 
+        .btn-secondary {
+            background-color: #64748b;
+        }
+
         .btn-danger {
             background-color: #dc2626;
         }
 
-        .audio-btn:active, .refresh-btn:active, .btn-primary:active, .btn-danger:active {
+        .audio-btn:active, .refresh-btn:active, .btn-primary:active, .btn-secondary:active, .btn-danger:active {
             transform: scale(0.98);
         }
 
@@ -142,8 +188,8 @@
             font-style: italic;
         }
 
-        /* Form Styles */
-        .auth-card {
+        /* Form & Settings Styles */
+        .auth-card, .settings-card {
             background-color: #ffffff;
             border: 1px solid #cbd5e1;
             border-radius: 12px;
@@ -160,11 +206,27 @@
             gap: 6px;
         }
 
-        .form-group input {
+        .form-group label {
+            font-size: 0.85rem;
+            font-weight: 600;
+            color: #334155;
+        }
+
+        .form-group input, .form-group select {
             padding: 10px 12px;
             border: 1px solid #cbd5e1;
             border-radius: 8px;
             font-size: 0.95rem;
+            background-color: #ffffff;
+        }
+
+        .form-row {
+            display: flex;
+            gap: 12px;
+        }
+
+        .form-row .form-group {
+            flex: 1;
         }
 
         .user-nav {
@@ -172,9 +234,15 @@
             justify-content: flex-end;
             margin-bottom: 12px;
         }
+
+        .save-status {
+            font-size: 0.85rem;
+            color: #16a34a;
+            font-weight: 600;
+            display: none;
+        }
     </style>
 
-    <!-- index.html -->
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
         import { getAuth, signInWithEmailAndPassword, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js";
@@ -192,7 +260,6 @@
         const app = initializeApp(firebaseConfig);
         const auth = getAuth(app);
 
-        // Initialize App Check with reCAPTCHA Enterprise Provider
         const appCheck = initializeAppCheck(app, {
             provider: new ReCaptchaEnterpriseProvider('6LdigrctAAAAAOVGLfETLltf1eRMNiYSA1CfBVGF'),
             isTokenAutoRefreshEnabled: true
@@ -212,7 +279,10 @@
     <header>
         <div class="header-top">
             <h1>Morning Report</h1>
-            <span class="version-badge" id="appVersion">v1.17</span>
+            <div class="header-actions">
+                <button id="settings-toggle-btn" class="icon-btn" title="Settings" style="display: none;">⚙️</button>
+                <span class="version-badge" id="appVersion">v1.18</span>
+            </div>
         </div>
     </header>
 
@@ -228,6 +298,68 @@
             <p id="login-error" style="color: red; display: none;"></p>
         </div>
 
+        <!-- Settings Container -->
+        <div id="settings-container" class="settings-card" style="display: none;">
+            <h2>App Settings</h2>
+            <form id="settings-form" style="display: flex; flex-direction: column; gap: 14px;">
+                <div class="form-group">
+                    <label for="setting-user-name">Your Name</label>
+                    <input type="text" id="setting-user-name" placeholder="e.g. Darin" />
+                </div>
+
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="setting-latitude">Latitude</label>
+                        <input type="number" step="any" id="setting-latitude" placeholder="0.0436" />
+                    </div>
+                    <div class="form-group">
+                        <label for="setting-longitude">Longitude</label>
+                        <input type="number" step="any" id="setting-longitude" placeholder="32.4418" />
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <button type="button" id="detect-location-btn" class="btn-secondary" style="padding: 6px 12px; font-size: 0.8rem; align-self: flex-start;">
+                        📍 Detect Current Location
+                    </button>
+                </div>
+
+                <div class="form-group">
+                    <label for="setting-gemini-model">Gemini AI Model</label>
+                    <select id="setting-gemini-model">
+                        <option value="gemini-3.6-flash">Gemini 3.6 Flash (Default / High Quality)</option>
+                        <option value="gemini-3.5-flash-lite">Gemini 3.5 Flash-Lite (Cost Effective)</option>
+                        <option value="gemini-3.1-flash-lite">Gemini 3.1 Flash-Lite (Ultra Light)</option>
+                    </select>
+                </div>
+
+                <div class="form-group">
+                    <label for="setting-tts-voice">Text-to-Speech Voice</label>
+                    <select id="setting-tts-voice">
+                        <optgroup label="Studio Tier (Premium)">
+                            <option value="en-US-Studio-O">Studio Male (en-US-Studio-O)</option>
+                            <option value="en-US-Studio-Q">Studio Female (en-US-Studio-Q)</option>
+                        </optgroup>
+                        <optgroup label="Neural2 Tier (Cost Effective)">
+                            <option value="en-US-Neural2-F">Neural2 Female (en-US-Neural2-F)</option>
+                            <option value="en-US-Neural2-J">Neural2 Male (en-US-Neural2-J)</option>
+                            <option value="en-US-Neural2-D">Neural2 Male Deep (en-US-Neural2-D)</option>
+                        </optgroup>
+                        <optgroup label="Standard Tier">
+                            <option value="en-US-Standard-C">Standard Female (en-US-Standard-C)</option>
+                            <option value="en-US-Standard-D">Standard Male (en-US-Standard-D)</option>
+                        </optgroup>
+                    </select>
+                </div>
+
+                <div style="display: flex; gap: 8px; align-items: center; margin-top: 8px;">
+                    <button type="submit" class="btn-primary">Save Preferences</button>
+                    <button type="button" id="close-settings-btn" class="btn-secondary">Back to Briefing</button>
+                    <span id="save-status" class="save-status">Saved!</span>
+                </div>
+            </form>
+        </div>
+
         <!-- Main App Content (hidden until authenticated) -->
         <div id="app-container" style="display: none;">
             <div class="user-nav">
@@ -241,6 +373,13 @@
                 <div class="card-body loading-text" id="reportText">
                     Please click refresh to fetch your briefing...
                 </div>
+                
+                <!-- Metadata Footer -->
+                <div class="card-footer" id="briefingMeta" style="display: none;">
+                    <span class="meta-badge" id="metaModel">Model: --</span>
+                    <span class="meta-badge" id="metaVoice">Voice: --</span>
+                </div>
+
                 <div class="controls">
                     <button class="audio-btn" id="readBtn">
                         <span>🔊</span> <span id="btnText">Read Aloud</span>
@@ -254,7 +393,6 @@
     </main>
 
     <script>
-        // Register Service Worker for offline capability
         if ('serviceWorker' in navigator) {
             navigator.serviceWorker.register('sw.js')
                 .then(registration => {
