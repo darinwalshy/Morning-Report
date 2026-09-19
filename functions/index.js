@@ -274,10 +274,12 @@ Moon Phase: ${moonPhaseName}
       }
 
       const ai = new GoogleGenAI({ apiKey });
-      const nameGreeting = userName ? `Address the user personally by their name: ${userName}.` : "Address the user in a warm, welcoming greeting.";
+      const nameInstruction = userName 
+        ? `The user's name is ${userName}. Incorporate their name naturally into your opening greeting.` 
+        : "Address the user in a warm, welcoming opening greeting.";
 
       const prompt = `
-You are a warm, helpful personal morning assistant. ${nameGreeting}
+You are a warm, helpful personal morning assistant. ${nameInstruction}
 
 Below is today's raw weather data for the specified coordinates:
 ${weatherContext}
@@ -287,16 +289,25 @@ ${financeContext}
 
 Search live news outlets for top current stories out of Uganda (or major regional East African / global news strongly impacting Uganda).
 
-Generate a daily morning report structured into exactly four distinct sections. DO NOT use markdown headers (such as # or ###). Use bold section titles instead:
+Generate a daily morning report structured into exactly four distinct sections. DO NOT use markdown headers (such as # or ###). Use bold section titles followed by a colon (e.g., **Weather Overview:**).
 
-1. **Weather Overview**: Synthesize the weather data into a friendly, natural narrative. Cover current temperature, humidity, high/low range, rain odds, wind speed, sunrise/sunset times, and astronomical highlights (moonrise/moonset and phase). Use Celsius for all temperatures.
+Format Rules for Opening & Greeting:
+- Begin the daily briefing with 1 to 2 creative, warm, and engaging opening sentences at the very top.
+- Feel free to vary the phrasing every day (e.g., cheerful, reflective, inspiring, or atmospheric).
+- You MUST address the user by name in this opening sentence if a name is provided above.
+- Follow this opening greeting with a blank line before starting Section 1.
+- DO NOT repeat any greeting, pleasantries, or user name inside any of the four sections below.
 
-2. **Market & Financial Summary**: Synthesize the provided asset metrics into a conversational overview detailing the latest prices and daily price changes for the S&P 500, NASDAQ, SPCX, and Rocket Lab. Conclude this section with 2–3 sentences explaining overall broader macro market dynamics driving these movements.
+Structure the rest of the output with a blank line before each section title:
 
-3. **Key News Highlights**: Search for up to 5 of the top pertinent news items originating from or strongly affecting Uganda today. For each story, format it with a bullet point and bold title (e.g., "* **News Item 1: Headline Here**"), followed by a thorough 4 to 5 sentence summary explaining what happened and why it matters. If fewer than 5 major stories are available on a light news day, provide as many as are relevant (down to 1). If live news search yields no results or fails, output: "News highlights are currently unavailable."
+1. **Weather Overview:** Synthesize the weather data into a friendly, natural narrative starting immediately with the current weather conditions. Cover current temperature, humidity, high/low range, rain odds, wind speed, sunrise/sunset times, and astronomical highlights (moonrise/moonset and phase). Use Celsius for all temperatures.
 
-4. **Daily Briefing**: A concise, encouraging 3-sentence morning briefing focused on productivity, clarity, and starting the day strong.
-      `.trim();
+2. **Market & Financial Summary:** Synthesize the provided asset metrics into a conversational overview detailing the latest prices and daily price changes for the S&P 500, NASDAQ, SPCX, and Rocket Lab. Conclude this section with 2–3 sentences explaining overall broader macro market dynamics driving these movements.
+
+3. **Key News Highlights:** Search for up to 5 of the top pertinent news items originating from or strongly affecting Uganda today. For each story, format it with a bullet point and bold title followed by a colon (e.g., "* **News Item 1: Headline Here:**"), followed by a thorough 4 to 5 sentence summary explaining what happened and why it matters. If fewer than 5 major stories are available on a light news day, provide as many as are relevant (down to 1). If live news search yields no results or fails, output: "News highlights are currently unavailable."
+
+4. **Daily Briefing:** A concise, encouraging 3-sentence morning briefing focused on productivity, clarity, and starting the day strong.
+`.trim();
 
       let rawText = "";
       let actualModelUsed = requestedModel;
