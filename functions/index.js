@@ -85,7 +85,11 @@ function formatLocalTime(timestamp) {
 }
 
 export const generateBriefing = functions.https.onRequest(
-  { secrets: ["GEMINI_API_KEY"] },
+  { 
+    secrets: ["GEMINI_API_KEY"],
+    timeoutSeconds: 120, // Increases Cloud Function timeout limit to 2 minutes
+    memory: "512MiB"     // Provides extra compute resources for faster TTS processing
+  },
   async (req, res) => {
     // 1. CORS Setup
     const origin = req.headers.origin;
