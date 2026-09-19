@@ -215,7 +215,8 @@ Moon Phase: ${moonPhaseName}
       // 6. Fetch Financial Data via yahoo-finance2 with Fallbacks
       let financeContext = "";
       try {
-        const { default: yahooFinance } = await import("yahoo-finance2");
+        const { default: YahooFinance } = await import("yahoo-finance2");
+        const yahooFinance = new YahooFinance();
 
         const tickers = ["^GSPC", "^IXIC", "SPCX", "RKLB"];
         const quotes = await Promise.all(
