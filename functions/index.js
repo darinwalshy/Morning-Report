@@ -188,7 +188,7 @@ export const generateBriefing = functions.https.onRequest(
         throw transactionErr;
       }
 
-      // 5. Fetch Weather Data with Client Latitude/Longitude
+      // 5. Fetch Open-Meteo Forecast Weather Data
       let weatherContext = "";
       try {
         const weatherUrl = `https://api.open-meteo.com/v1/forecast?latitude=${latitude}&longitude=${longitude}&current=temperature_2m,relative_humidity_2m,weather_code&daily=temperature_2m_max,temperature_2m_min,precipitation_probability_max,wind_speed_10m_max,sunrise,sunset,moonrise,moonset,moon_phase&temperature_unit=celsius&timeformat=unixtime&timezone=Africa%2FKampala`;
@@ -244,7 +244,24 @@ Moon Illumination: ${moonIllumination}
         return;
       }
 
-      // 6. Fetch Financial Data via yahoo-finance2
+      // 6. Fetch Observed Station Weather (NOAA METAR for HUEN - Entebbe Airport)
+      let metarContext = "";
+      try {
+        const metarUrl = "https://tgftp.nws.noaa.gov/data/observations/metar/stations/HUEN.TXT";
+        const metarResponse = await fetch(metarUrl);
+        if (metarResponse.ok) {
+          const metarRaw = await metarResponse.text();
+          metarContext = metarRaw.trim();
+        } else {
+          console.warn(`NOAA METAR returned status: ${metarResponse.status}`);
+          metarContext = "NOAA METAR station data currently unavailable.";
+        }
+      } catch (metarErr) {
+        console.error("NOAA METAR fetch failed:", metarErr);
+        metarContext = "NOAA METAR station data currently unavailable.";
+      }
+
+      // 7. Fetch Financial Data via yahoo-finance2
       let financeContext = "";
       try {
         const { default: YahooFinance } = await import("yahoo-finance2");
@@ -273,7 +290,6 @@ Moon Illumination: ${moonIllumination}
           const changePercent = typeof q.regularMarketChangePercent === "number" ? q.regularMarketChangePercent.toFixed(2) : "N/A";
           const sign = (q.regularMarketChange || 0) >= 0 ? "+" : "";
 
-          // Exclude point change for S&P 500 and NASDAQ
           if (q.symbol === "^GSPC" || q.symbol === "^IXIC") {
             return `${name} (${q.symbol}):$${price} (${sign}${changePercent}%)`;
           }
@@ -291,7 +307,7 @@ Moon Illumination: ${moonIllumination}
         financeContext = "Financial market data currently unavailable.";
       }
 
-      // 7. Generate Content via Gemini API with Fallback Handling
+      // 8. Generate Content via Gemini API with Fallback Handling
       const apiKey = process.env.GEMINI_API_KEY;
       if (!apiKey) {
         throw new Error("GEMINI_API_KEY environment variable is missing.");
@@ -305,32 +321,37 @@ Moon Illumination: ${moonIllumination}
       const prompt = `
 You are a warm, helpful personal morning assistant. ${nameInstruction}
 
-Below is today's raw weather data for the specified coordinates:
+Below is today's raw model/forecast weather data for the specified coordinates:
 ${weatherContext}
+
+Below is the latest raw physical METAR observation string from Entebbe International Airport weather station (HUEN):
+${metarContext}
 
 Below is recent market data for key tracked assets:
 ${financeContext}
 
 Search live news outlets for top current stories out of Uganda (or major regional East African / global news strongly impacting Uganda).
 
-Generate a daily morning report structured into exactly four distinct sections. DO NOT use markdown headers (such as # or ###). Use bold section titles followed by a colon (e.g., **Weather Overview:**).
+Generate a daily morning report structured into exactly FIVE distinct sections. DO NOT use markdown headers (such as # or ###). Use bold section titles followed by a colon (e.g., **Weather Overview:**).
 
 Format Rules for Opening & Greeting:
 - Begin the daily briefing with 1 to 2 creative, warm, and engaging opening sentences at the very top.
 - Feel free to vary the phrasing every day (e.g., cheerful, reflective, inspiring, or atmospheric).
 - You MUST address the user by name in this opening sentence if a name is provided above.
 - Follow this opening greeting with a blank line before starting Section 1.
-- DO NOT repeat any greeting, pleasantries, or user name inside any of the four sections below.
+- DO NOT repeat any greeting, pleasantries, or user name inside any of the five sections below.
 
 Structure the rest of the output with a blank line before each section title:
 
-1. **Weather Overview:** Synthesize the weather data into a friendly, natural narrative starting immediately with the current weather conditions. Cover current temperature, relative humidity, absolute humidity (g/m³), high/low range, rain odds, wind speed, sunrise/sunset times, and astronomical highlights (moonrise/moonset, moon phase, and illumination percentage). Use Celsius for all temperatures.
+1. **Weather Overview:** Synthesize the model forecast data into a friendly, natural narrative starting immediately with the current weather conditions. Cover current temperature, relative humidity, absolute humidity (g/m³), high/low range, rain odds, wind speed, sunrise/sunset times, and astronomical highlights (moonrise/moonset, moon phase, and illumination percentage). Use Celsius for all temperatures.
 
-2. **Market & Financial Summary:** Synthesize the provided asset metrics into a conversational overview detailing the latest prices and daily price changes for the S&P 500, NASDAQ, SPCX, and Rocket Lab. Note that S&P 500 and NASDAQ should focus on index level and percentage change. Conclude this section with 2–3 sentences explaining overall broader macro market dynamics driving these movements.
+2. **Actual Station Measurements:** Parse and translate the provided HUEN METAR station text into clear, readable surface measurements. Detail the actual measured surface temperature, dew point, relative wind speed and direction, barometric sea-level pressure (QNH in hPa/mbar), cloud cover, horizontal visibility, and state the exact observation timestamp converted into local East Africa Time (EAT). If METAR data is unavailable, state: "Actual station observations are currently unavailable."
 
-3. **Key News Highlights:** Search for up to 5 of the top pertinent news items originating from or strongly affecting Uganda today. For each story, format it with a bullet point and bold title followed by a colon (e.g., "* **News Item 1: Headline Here:**"), followed by a thorough 4 to 5 sentence summary explaining what happened and why it matters. If fewer than 5 major stories are available on a light news day, provide as many as are relevant (down to 1). If live news search yields no results or fails, output: "News highlights are currently unavailable."
+3. **Market & Financial Summary:** Synthesize the provided asset metrics into a conversational overview detailing the latest prices and daily price changes for the S&P 500, NASDAQ, SPCX, and Rocket Lab. Note that S&P 500 and NASDAQ should focus on index level and percentage change. Conclude this section with 2–3 sentences explaining overall broader macro market dynamics driving these movements.
 
-4. **Daily Briefing:** A concise, encouraging 3-sentence morning briefing focused on productivity, clarity, and starting the day strong.
+4. **Key News Highlights:** Search for up to 5 of the top pertinent news items originating from or strongly affecting Uganda today. For each story, format it with a bullet point and bold title followed by a colon (e.g., "* **News Item 1: Headline Here:**"), followed by a thorough 4 to 5 sentence summary explaining what happened and why it matters. If fewer than 5 major stories are available on a light news day, provide as many as are relevant (down to 1). If live news search yields no results or fails, output: "News highlights are currently unavailable."
+
+5. **Daily Briefing:** A concise, encouraging 3-sentence morning briefing focused on productivity, clarity, and starting the day strong.
 `.trim();
 
       let rawText = "";
@@ -363,7 +384,7 @@ Structure the rest of the output with a blank line before each section title:
 
       rawText = rawText.replace(/^#+\s*/gm, "");
 
-      // 8. Synthesize Audio via Google Cloud TTS with SSML Pauses
+      // 9. Synthesize Audio via Google Cloud TTS with SSML Pauses
       let audioBase64 = null;
       let actualVoiceUsed = requestedVoice;
       let voiceFallbackOccurred = false;
@@ -372,12 +393,12 @@ Structure the rest of the output with a blank line before each section title:
         const { TextToSpeechClient } = await import("@google-cloud/text-to-speech");
         const ttsClient = new TextToSpeechClient();
 
-        // Strip raw markdown formatting (asterisks, hashtags, underscores)
+        // Strip raw markdown formatting
         let cleanText = rawText.replace(/[#*_`~]/g, "").trim();
 
         // Inject SSML pauses into speech stream
         // 1. Add 1.5s break before section titles
-        let ssmlBody = cleanText.replace(/\n\n(?=Weather Overview|Market & Financial Summary|Key News Highlights|Daily Briefing)/g, '<break time="1500ms"/>\n\n');
+        let ssmlBody = cleanText.replace(/\n\n(?=Weather Overview|Actual Station Measurements|Market & Financial Summary|Key News Highlights|Daily Briefing)/g, '<break time="1500ms"/>\n\n');
         
         // 2. Add 1.2s break after opening greeting
         const firstBlankLineIndex = ssmlBody.indexOf("\n\n");
