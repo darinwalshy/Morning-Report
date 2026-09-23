@@ -54,18 +54,32 @@ function getWeatherCondition(code) {
   return weatherMap[code] || "Unknown weather conditions";
 }
 
-// Moon Phase Translator Helper
+// Moon Phase Translator Helper with Buffer Windows
 function getMoonPhaseName(phase) {
   if (phase === undefined || phase === null) return "Unknown";
-  if (phase === 0 || phase === 1) return "New Moon";
-  if (phase > 0 && phase < 0.25) return "Waxing Crescent";
-  if (phase === 0.25) return "First Quarter";
-  if (phase > 0.25 && phase < 0.5) return "Waxing Gibbous";
-  if (phase === 0.5) return "Full Moon";
-  if (phase > 0.5 && phase < 0.75) return "Waning Gibbous";
-  if (phase === 0.75) return "Last Quarter";
-  if (phase > 0.75 && phase < 1) return "Waning Crescent";
-  return "Unknown";
+  if (phase <= 0.02 || phase >= 0.98) return "New Moon";
+  if (phase < 0.23) return "Waxing Crescent";
+  if (phase <= 0.27) return "First Quarter";
+  if (phase < 0.48) return "Waxing Gibbous";
+  if (phase <= 0.52) return "Full Moon";
+  if (phase < 0.73) return "Waning Gibbous";
+  if (phase <= 0.77) return "Last Quarter";
+  return "Waning Crescent";
+}
+
+// Absolute Humidity Calculation Helper (g/m³)
+function calculateAbsoluteHumidity(tempC, relativeHumidity) {
+  if (tempC === undefined || relativeHumidity === undefined) return "N/A";
+  const vaporPressure = 6.112 * Math.exp((17.67 * tempC) / (tempC + 243.5)) * (relativeHumidity / 100);
+  const absoluteHumidity = (vaporPressure * 216.7) / (273.15 + tempC);
+  return `${absoluteHumidity.toFixed(2)} g/m³`;
+}
+
+// Moon Illumination Percentage Calculation Helper
+function getMoonIllumination(phase) {
+  if (phase === undefined || phase === null) return "N/A";
+  const illumination = ((1 - Math.cos(2 * Math.PI * phase)) / 2) * 100;
+  return `${Math.round(illumination)}%`;
 }
 
 // Local 12-hour Time Formatter Helper
@@ -188,6 +202,7 @@ export const generateBriefing = functions.https.onRequest(
 
         const currentTemp = weatherData.current?.temperature_2m;
         const currentHumidity = weatherData.current?.relative_humidity_2m;
+        const absoluteHumidity = calculateAbsoluteHumidity(currentTemp, currentHumidity);
         const weatherCode = weatherData.current?.weather_code;
 
         const tempMax = weatherData.daily?.temperature_2m_max?.[0];
@@ -201,13 +216,15 @@ export const generateBriefing = functions.https.onRequest(
         const moonset = formatLocalTime(weatherData.daily?.moonset?.[0]);
         const moonPhaseVal = weatherData.daily?.moon_phase?.[0];
         const moonPhaseName = getMoonPhaseName(moonPhaseVal);
+        const moonIllumination = getMoonIllumination(moonPhaseVal);
 
         const conditionText = getWeatherCondition(weatherCode);
 
         weatherContext = `
 Location Coordinates: ${latitude},${longitude}
 Current Temperature: ${currentTemp}°C
-Humidity: ${currentHumidity}%
+Relative Humidity: ${currentHumidity}%
+Absolute Humidity: ${absoluteHumidity}
 Condition: ${conditionText}
 High Temp Today: ${tempMax}°C
 Low Temp Today: ${tempMin}°C
@@ -218,6 +235,7 @@ Sunset: ${sunset}
 Moonrise: ${moonrise}
 Moonset: ${moonset}
 Moon Phase: ${moonPhaseName}
+Moon Illumination: ${moonIllumination}
         `.trim();
 
       } catch (weatherErr) {
@@ -254,6 +272,12 @@ Moon Phase: ${moonPhaseName}
           const change = typeof q.regularMarketChange === "number" ? q.regularMarketChange.toFixed(2) : "N/A";
           const changePercent = typeof q.regularMarketChangePercent === "number" ? q.regularMarketChangePercent.toFixed(2) : "N/A";
           const sign = (q.regularMarketChange || 0) >= 0 ? "+" : "";
+
+          // Exclude point change for S&P 500 and NASDAQ
+          if (q.symbol === "^GSPC" || q.symbol === "^IXIC") {
+            return `${name} (${q.symbol}):$${price} (${sign}${changePercent}%)`;
+          }
+
           return `${name} (${q.symbol}):$${price} (${sign}${change}, ${sign}${changePercent}%)`;
         });
 
@@ -300,9 +324,9 @@ Format Rules for Opening & Greeting:
 
 Structure the rest of the output with a blank line before each section title:
 
-1. **Weather Overview:** Synthesize the weather data into a friendly, natural narrative starting immediately with the current weather conditions. Cover current temperature, humidity, high/low range, rain odds, wind speed, sunrise/sunset times, and astronomical highlights (moonrise/moonset and phase). Use Celsius for all temperatures.
+1. **Weather Overview:** Synthesize the weather data into a friendly, natural narrative starting immediately with the current weather conditions. Cover current temperature, relative humidity, absolute humidity (g/m³), high/low range, rain odds, wind speed, sunrise/sunset times, and astronomical highlights (moonrise/moonset, moon phase, and illumination percentage). Use Celsius for all temperatures.
 
-2. **Market & Financial Summary:** Synthesize the provided asset metrics into a conversational overview detailing the latest prices and daily price changes for the S&P 500, NASDAQ, SPCX, and Rocket Lab. Conclude this section with 2–3 sentences explaining overall broader macro market dynamics driving these movements.
+2. **Market & Financial Summary:** Synthesize the provided asset metrics into a conversational overview detailing the latest prices and daily price changes for the S&P 500, NASDAQ, SPCX, and Rocket Lab. Note that S&P 500 and NASDAQ should focus on index level and percentage change. Conclude this section with 2–3 sentences explaining overall broader macro market dynamics driving these movements.
 
 3. **Key News Highlights:** Search for up to 5 of the top pertinent news items originating from or strongly affecting Uganda today. For each story, format it with a bullet point and bold title followed by a colon (e.g., "* **News Item 1: Headline Here:**"), followed by a thorough 4 to 5 sentence summary explaining what happened and why it matters. If fewer than 5 major stories are available on a light news day, provide as many as are relevant (down to 1). If live news search yields no results or fails, output: "News highlights are currently unavailable."
 
@@ -339,7 +363,7 @@ Structure the rest of the output with a blank line before each section title:
 
       rawText = rawText.replace(/^#+\s*/gm, "");
 
-      // 8. Synthesize Audio via Google Cloud TTS with Fallback Handling
+      // 8. Synthesize Audio via Google Cloud TTS with SSML Pauses
       let audioBase64 = null;
       let actualVoiceUsed = requestedVoice;
       let voiceFallbackOccurred = false;
@@ -348,19 +372,39 @@ Structure the rest of the output with a blank line before each section title:
         const { TextToSpeechClient } = await import("@google-cloud/text-to-speech");
         const ttsClient = new TextToSpeechClient();
 
-        let spokenText = rawText
-          .replace(/[#*_`~]/g, "")
-          .replace(/\s+/g, " ")
-          .trim();
+        // Strip raw markdown formatting (asterisks, hashtags, underscores)
+        let cleanText = rawText.replace(/[#*_`~]/g, "").trim();
 
-        if (spokenText.length > 4500) {
-          spokenText = spokenText.slice(0, 4500);
+        // Inject SSML pauses into speech stream
+        // 1. Add 1.5s break before section titles
+        let ssmlBody = cleanText.replace(/\n\n(?=Weather Overview|Market & Financial Summary|Key News Highlights|Daily Briefing)/g, '<break time="1500ms"/>\n\n');
+        
+        // 2. Add 1.2s break after opening greeting
+        const firstBlankLineIndex = ssmlBody.indexOf("\n\n");
+        if (firstBlankLineIndex !== -1) {
+          ssmlBody = ssmlBody.slice(0, firstBlankLineIndex) + '<break time="1200ms"/>' + ssmlBody.slice(firstBlankLineIndex);
+        }
+
+        // 3. Add 600ms break after news item headlines
+        ssmlBody = ssmlBody.replace(/(News Item \d+:[^:]+:)/g, '$1 <break time="600ms"/>');
+
+        // Escape XML characters safely
+        ssmlBody = ssmlBody
+          .replace(/&/g, "&amp;")
+          .replace(/</g, "&lt;")
+          .replace(/>/g, "&gt;")
+          .replace(/&lt;break time="(\d+ms)"\/&gt;/g, '<break time="$1"/>');
+
+        let ssmlText = `<speak>${ssmlBody}</speak>`;
+
+        if (ssmlText.length > 4900) {
+          ssmlText = ssmlText.slice(0, 4900) + "</speak>";
         }
 
         const generateAudio = async (voiceName) => {
           const langCode = voiceName.substring(0, 5);
           const ttsRequest = {
-            input: { text: spokenText },
+            input: { ssml: ssmlText },
             voice: { languageCode: langCode, name: voiceName },
             audioConfig: { audioEncoding: "MP3", speakingRate: 1.0 }
           };
