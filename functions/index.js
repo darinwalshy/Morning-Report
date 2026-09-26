@@ -98,6 +98,20 @@ function formatLocalTime(timestamp) {
   }
 }
 
+// Helper to format a number to 3 significant figures formatted with commas
+function formatToThreeSigFigs(num) {
+  if (typeof num !== "number" || isNaN(num)) return "N/A";
+  const roundedVal = Number(num.toPrecision(3));
+  return new Intl.NumberFormat("en-US").format(roundedVal);
+}
+
+// Helper to format a number rounded to the nearest whole integer with commas
+function formatToWholeInteger(num) {
+  if (typeof num !== "number" || isNaN(num)) return "N/A";
+  const roundedVal = Math.round(num);
+  return new Intl.NumberFormat("en-US").format(roundedVal);
+}
+
 export const generateBriefing = functions.https.onRequest(
   { 
     secrets: ["GEMINI_API_KEY"],
@@ -267,7 +281,7 @@ Moon Illumination: ${moonIllumination}
         const { default: YahooFinance } = await import("yahoo-finance2");
         const yahooFinance = new YahooFinance();
 
-        const tickers = ["^GSPC", "^IXIC", "SPCX", "RKLB"];
+        const tickers = ["^GSPC", "^IXIC", "BTC-USD", "SPCX", "RKLB"];
         const quotes = await Promise.all(
           tickers.map(ticker => yahooFinance.quote(ticker).catch(err => {
             console.error(`Error fetching ticker ${ticker}:`, err);
@@ -278,6 +292,7 @@ Moon Illumination: ${moonIllumination}
         const tickerNames = {
           "^GSPC": "S&P 500",
           "^IXIC": "NASDAQ",
+          "BTC-USD": "Bitcoin",
           "SPCX": "SPCX (Space ETF)",
           "RKLB": "Rocket Lab"
         };
@@ -285,16 +300,43 @@ Moon Illumination: ${moonIllumination}
         const financeLines = quotes.filter(q => q !== null).map(q => {
           const name = tickerNames[q.symbol] || q.symbol;
           const priceVal = q.regularMarketPrice ?? q.postMarketPrice ?? q.preMarketPrice ?? q.previousClose;
-          const price = typeof priceVal === "number" ? priceVal.toFixed(2) : "N/A";
-          const change = typeof q.regularMarketChange === "number" ? q.regularMarketChange.toFixed(2) : "N/A";
-          const changePercent = typeof q.regularMarketChangePercent === "number" ? q.regularMarketChangePercent.toFixed(2) : "N/A";
-          const sign = (q.regularMarketChange || 0) >= 0 ? "+" : "";
+          const changeVal = q.regularMarketChange ?? 0;
+          const changePercentVal = q.regularMarketChangePercent ?? 0;
 
-          if (q.symbol === "^GSPC" || q.symbol === "^IXIC") {
-            return `${name} (${q.symbol}):$${price} (${sign}${changePercent}%)`;
+          if (typeof priceVal !== "number") {
+            return `${name} (${q.symbol}): N/A`;
           }
 
-          return `${name} (${q.symbol}):$${price} (${sign}${change}, ${sign}${changePercent}%)`;
+          const isSignificantMove = Math.abs(changePercentVal) >= 1.0;
+          const sign = changeVal >= 0 ? "+" : "";
+          const formattedPercent = `${sign}${changePercentVal.toFixed(2)}%`;
+
+          // Indices: S&P 500 and NASDAQ (3 Sig Figs, no '$', percentage change only)
+          if (q.symbol === "^GSPC" || q.symbol === "^IXIC") {
+            const formattedPrice = formatToThreeSigFigs(priceVal);
+            if (!isSignificantMove) {
+              return `${name} (${q.symbol}):${formattedPrice}`;
+            }
+            return `${name} (${q.symbol}): ${formattedPrice} (${formattedPercent})`;
+          }
+
+          // Bitcoin: (3 Sig Figs, with '$', raw dollar change and percentage change)
+          if (q.symbol === "BTC-USD") {
+            const formattedPrice = formatToThreeSigFigs(priceVal);
+            if (!isSignificantMove) {
+              return `${name} (${q.symbol}):$${formattedPrice}`;
+            }
+            const formattedRawChange = `${sign}$${formatToThreeSigFigs(Math.abs(changeVal))}`;
+            return `${name} (${q.symbol}):$${formattedPrice} (${formattedPercent},${formattedRawChange})`;
+          }
+
+          // Stocks/ETFs: SPCX and RKLB (Whole Integer, with '$', raw dollar change and percentage change)
+          const formattedPrice = formatToWholeInteger(priceVal);
+          if (!isSignificantMove) {
+            return `${name} (${q.symbol}):$${formattedPrice}`;
+          }
+          const formattedRawChange = `${sign}$${formatToWholeInteger(Math.abs(changeVal))}`;
+          return `${name} (${q.symbol}):$${formattedPrice} (${formattedPercent},${formattedRawChange})`;
         });
 
         if (financeLines.length > 0) {
@@ -347,7 +389,7 @@ Structure the rest of the output with a blank line before each section title:
 
 2. **Actual Station Measurements:** Parse and translate the provided HUEN METAR station text into clear, readable surface measurements. Detail the actual measured surface temperature, dew point, relative wind speed and direction, barometric sea-level pressure (QNH in hPa/mbar), cloud cover, horizontal visibility, and state the exact observation timestamp converted into local East Africa Time (EAT). If METAR data is unavailable, state: "Actual station observations are currently unavailable."
 
-3. **Market & Financial Summary:** Synthesize the provided asset metrics into a conversational overview detailing the latest prices and daily price changes for the S&P 500, NASDAQ, SPCX, and Rocket Lab. Note that S&P 500 and NASDAQ should focus on index level and percentage change. Conclude this section with 2–3 sentences explaining overall broader macro market dynamics driving these movements.
+3. **Market & Financial Summary:** Synthesize the provided asset metrics into a conversational overview detailing the latest levels and price changes for the S&P 500, NASDAQ, Bitcoin, SPCX, and Rocket Lab. Note that if daily price change metrics are omitted for a ticker in the prompt context, it indicates a minor daily movement (<1%), so simply report its current level without commenting on daily gain/loss. Conclude this section with 2–3 sentences explaining overall broader macro market dynamics driving these movements.
 
 4. **Key News Highlights:** Search for up to 5 of the top pertinent news items originating from or strongly affecting Uganda today.
 
@@ -414,7 +456,7 @@ If fewer than 5 major stories are available on a light news day, provide as many
           ssmlBody = ssmlBody.slice(0, firstBlankLineIndex) + '<break time="1200ms"/>' + ssmlBody.slice(firstBlankLineIndex);
         }
 
-        // 3. Add 600ms break after news item headlines (matches both "News Item X:" and any bold bullet title)
+        // 3. Add 600ms break after news item headlines
         ssmlBody = ssmlBody.replace(/(\*\s*\*\*[^*]+:\*\*)/g, '$1 <break time="600ms"/>');
 
         // Escape XML characters safely
