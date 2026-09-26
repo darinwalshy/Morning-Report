@@ -349,7 +349,15 @@ Structure the rest of the output with a blank line before each section title:
 
 3. **Market & Financial Summary:** Synthesize the provided asset metrics into a conversational overview detailing the latest prices and daily price changes for the S&P 500, NASDAQ, SPCX, and Rocket Lab. Note that S&P 500 and NASDAQ should focus on index level and percentage change. Conclude this section with 2–3 sentences explaining overall broader macro market dynamics driving these movements.
 
-4. **Key News Highlights:** Search for up to 5 of the top pertinent news items originating from or strongly affecting Uganda today. For each story, format it with a bullet point and bold title followed by a colon (e.g., "* **News Item 1: Headline Here:**"), followed by a thorough 4 to 5 sentence summary explaining what happened and why it matters. If fewer than 5 major stories are available on a light news day, provide as many as are relevant (down to 1). If live news search yields no results or fails, output: "News highlights are currently unavailable."
+4. **Key News Highlights:** Search for up to 5 of the top pertinent news items originating from or strongly affecting Uganda today.
+
+CRITICAL FORMATTING REQUIREMENT FOR NEWS ITEMS:
+Each news item MUST strictly start on a new line with a bullet point, followed by "News Item X:" where X is the item number, followed by the headline in bold and a colon.
+Format example:
+* **News Item 1: Headline Title Here:** Thorough 4 to 5 sentence summary explaining what happened and why it matters.
+* **News Item 2: Headline Title Here:** Thorough 4 to 5 sentence summary explaining what happened and why it matters.
+
+If fewer than 5 major stories are available on a light news day, provide as many as are relevant (down to 1). If live news search yields no results or fails, output: "News highlights are currently unavailable."
 
 5. **Daily Briefing:** A concise, encouraging 3-sentence morning briefing focused on productivity, clarity, and starting the day strong.
 `.trim();
@@ -406,8 +414,8 @@ Structure the rest of the output with a blank line before each section title:
           ssmlBody = ssmlBody.slice(0, firstBlankLineIndex) + '<break time="1200ms"/>' + ssmlBody.slice(firstBlankLineIndex);
         }
 
-        // 3. Add 600ms break after news item headlines
-        ssmlBody = ssmlBody.replace(/(News Item \d+:[^:]+:)/g, '$1 <break time="600ms"/>');
+        // 3. Add 600ms break after news item headlines (matches both "News Item X:" and any bold bullet title)
+        ssmlBody = ssmlBody.replace(/(\*\s*\*\*[^*]+:\*\*)/g, '$1 <break time="600ms"/>');
 
         // Escape XML characters safely
         ssmlBody = ssmlBody
