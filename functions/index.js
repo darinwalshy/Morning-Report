@@ -307,7 +307,9 @@ Moon Illumination: ${moonIllumination}
             return `${name} (${q.symbol}): N/A`;
           }
 
-          const isSignificantMove = Math.abs(changePercentVal) >= 1.0;
+          // Dynamic thresholds: 1.0% for broad market indices, 2.0% for single stocks/crypto
+          const threshold = (q.symbol === "^GSPC" || q.symbol === "^IXIC") ? 1.0 : 2.0;
+          const isSignificantMove = Math.abs(changePercentVal) >= threshold;
           const sign = changeVal >= 0 ? "+" : "";
           const formattedPercent = `${sign}${changePercentVal.toFixed(2)}%`;
 
@@ -389,7 +391,11 @@ Structure the rest of the output with a blank line before each section title:
 
 2. **Actual Station Measurements:** Parse and translate the provided HUEN METAR station text into clear, readable surface measurements. Detail the actual measured surface temperature, dew point, relative wind speed and direction, barometric sea-level pressure (QNH in hPa/mbar), cloud cover, horizontal visibility, and state the exact observation timestamp converted into local East Africa Time (EAT). If METAR data is unavailable, state: "Actual station observations are currently unavailable."
 
-3. **Market & Financial Summary:** Synthesize the provided asset metrics into a conversational overview detailing the latest levels and price changes for the S&P 500, NASDAQ, Bitcoin, SPCX, and Rocket Lab. Note that if daily price change metrics are omitted for a ticker in the prompt context, it indicates a minor daily movement (<1%), so simply report its current level without commenting on daily gain/loss. Conclude this section with 2–3 sentences explaining overall broader macro market dynamics driving these movements.
+3. **Market & Financial Summary:** Present the latest levels and price changes for the S&P 500, NASDAQ, Bitcoin, SPCX, and Rocket Lab using the provided context.
+- Format each item using ONLY its full plain-text name (e.g., "S&P 500" or "Bitcoin"), completely omitting ticker symbols, parentheses, or caret symbols like "^GSPC" or "BTC-USD".
+- If a ticker is listed without daily percentage changes in the context, report its level directly without adding commentary.
+- For tickers where daily percentage changes ARE provided (indicating a significant move exceeding the threshold), provide a concise 1–2 sentence explanation detailing the primary news event, earnings report, or catalyst driving that specific price movement.
+- DO NOT include general macro market commentary unless tied directly to one of the significant ticker movements above.
 
 4. **Key News Highlights:** Search for up to 5 of the top pertinent news items originating from or strongly affecting Uganda today.
 
@@ -397,8 +403,10 @@ CRITICAL FORMATTING REQUIREMENT FOR NEWS ITEMS:
 Each news item MUST strictly start on a new line with a bullet point, followed by "News Item X:" where X is the item number, followed by the headline in bold and a colon.
 Format example:
 * **News Item 1: Headline Title Here:** Thorough 4 to 5 sentence summary explaining what happened and why it matters.
+
 * **News Item 2: Headline Title Here:** Thorough 4 to 5 sentence summary explaining what happened and why it matters.
 
+* **News Item 3: Headline Title Here:** Thorough 4 to 5 sentence summary explaining what happened and why it matters.
 If fewer than 5 major stories are available on a light news day, provide as many as are relevant (down to 1). If live news search yields no results or fails, output: "News highlights are currently unavailable."
 
 5. **Daily Briefing:** A concise, encouraging 3-sentence morning briefing focused on productivity, clarity, and starting the day strong.
@@ -450,10 +458,10 @@ If fewer than 5 major stories are available on a light news day, provide as many
         // 1. Add 1.5s break before section titles
         let ssmlBody = cleanText.replace(/\n\n(?=Weather Overview|Actual Station Measurements|Market & Financial Summary|Key News Highlights|Daily Briefing)/g, '<break time="1500ms"/>\n\n');
         
-        // 2. Add 1.2s break after opening greeting
+        // 2. Add 750ms break after opening greeting
         const firstBlankLineIndex = ssmlBody.indexOf("\n\n");
         if (firstBlankLineIndex !== -1) {
-          ssmlBody = ssmlBody.slice(0, firstBlankLineIndex) + '<break time="1200ms"/>' + ssmlBody.slice(firstBlankLineIndex);
+          ssmlBody = ssmlBody.slice(0, firstBlankLineIndex) + '<break time="750ms"/>' + ssmlBody.slice(firstBlankLineIndex);
         }
 
         // 3. Add 600ms break after news item headlines
@@ -466,7 +474,8 @@ If fewer than 5 major stories are available on a light news day, provide as many
           .replace(/>/g, "&gt;")
           .replace(/&lt;break time="(\d+ms)"\/&gt;/g, '<break time="$1"/>');
 
-        let ssmlText = `<speak>${ssmlBody}</speak>`;
+        // Wrap with 500ms initial lead-in pause
+        let ssmlText = `<speak><break time="500ms"/>${ssmlBody}</speak>`;
 
         if (ssmlText.length > 4900) {
           ssmlText = ssmlText.slice(0, 4900) + "</speak>";
