@@ -317,28 +317,28 @@ Moon Illumination: ${moonIllumination}
           if (q.symbol === "^GSPC" || q.symbol === "^IXIC") {
             const formattedPrice = formatToThreeSigFigs(priceVal);
             if (!isSignificantMove) {
-              return `${name} (${q.symbol}):${formattedPrice}`;
+              return `${name} (${q.symbol}):${formattedPrice}.`;
             }
-            return `${name} (${q.symbol}): ${formattedPrice} (${formattedPercent})`;
+            return `${name} (${q.symbol}): ${formattedPrice} (${formattedPercent}).`;
           }
 
           // Bitcoin: (3 Sig Figs, with '$', raw dollar change and percentage change)
           if (q.symbol === "BTC-USD") {
             const formattedPrice = formatToThreeSigFigs(priceVal);
             if (!isSignificantMove) {
-              return `${name} (${q.symbol}):$${formattedPrice}`;
+              return `${name} (${q.symbol}):$${formattedPrice}.`;
             }
             const formattedRawChange = `${sign}$${formatToThreeSigFigs(Math.abs(changeVal))}`;
-            return `${name} (${q.symbol}):$${formattedPrice} (${formattedPercent},${formattedRawChange})`;
+            return `${name} (${q.symbol}):$${formattedPrice} (${formattedPercent},${formattedRawChange}).`;
           }
 
           // Stocks/ETFs: SPCX and RKLB (Whole Integer, with '$', raw dollar change and percentage change)
           const formattedPrice = formatToWholeInteger(priceVal);
           if (!isSignificantMove) {
-            return `${name} (${q.symbol}):$${formattedPrice}`;
+            return `${name} (${q.symbol}):$${formattedPrice}.`;
           }
           const formattedRawChange = `${sign}$${formatToWholeInteger(Math.abs(changeVal))}`;
-          return `${name} (${q.symbol}):$${formattedPrice} (${formattedPercent},${formattedRawChange})`;
+          return `${name} (${q.symbol}):$${formattedPrice} (${formattedPercent},${formattedRawChange}).`;
         });
 
         if (financeLines.length > 0) {
@@ -393,6 +393,7 @@ Structure the rest of the output with a blank line before each section title:
 
 3. **Market & Financial Summary:** Present the latest levels and price changes for the S&P 500, NASDAQ, Bitcoin, SPCX, and Rocket Lab using the provided context.
 - Format each item using ONLY its full plain-text name (e.g., "S&P 500" or "Bitcoin"), completely omitting ticker symbols, parentheses, or caret symbols like "^GSPC" or "BTC-USD".
+- Ensure every single list item ends cleanly with a full stop period (.) to ensure proper text-to-speech cadence.
 - If a ticker is listed without daily percentage changes in the context, report its level directly without adding commentary.
 - For tickers where daily percentage changes ARE provided (indicating a significant move exceeding the threshold), provide a concise 1–2 sentence explanation detailing the primary news event, earnings report, or catalyst driving that specific price movement.
 - DO NOT include general macro market commentary unless tied directly to one of the significant ticker movements above.
@@ -409,7 +410,7 @@ Format example:
 * **News Item 3: Headline Title Here:** Thorough 4 to 5 sentence summary explaining what happened and why it matters.
 If fewer than 5 major stories are available on a light news day, provide as many as are relevant (down to 1). If live news search yields no results or fails, output: "News highlights are currently unavailable."
 
-5. **Daily Briefing:** A concise, encouraging 3-sentence morning briefing focused on productivity, clarity, and starting the day strong.
+5. **Verse of the Day:** Present an inspiring Bible verse along with its full Scripture reference (book, chapter, and verse). Follow the verse with a brief 2-sentence practical reflection on applying its message of faith, stewardship, or wisdom to the day ahead.
 `.trim();
 
       let rawText = "";
@@ -455,8 +456,8 @@ If fewer than 5 major stories are available on a light news day, provide as many
         let cleanText = rawText.replace(/[#*_`~]/g, "").trim();
 
         // Inject SSML pauses into speech stream
-        // 1. Add 1.5s break before section titles
-        let ssmlBody = cleanText.replace(/\n\n(?=Weather Overview|Actual Station Measurements|Market & Financial Summary|Key News Highlights|Daily Briefing)/g, '<break time="1500ms"/>\n\n');
+        // 1. Add 1.5s break before main section titles
+        let ssmlBody = cleanText.replace(/\n\n(?=Weather Overview|Actual Station Measurements|Market & Financial Summary|Key News Highlights|Verse of the Day)/g, '<break time="1500ms"/>\n\n');
         
         // 2. Add 750ms break after opening greeting
         const firstBlankLineIndex = ssmlBody.indexOf("\n\n");
@@ -464,7 +465,10 @@ If fewer than 5 major stories are available on a light news day, provide as many
           ssmlBody = ssmlBody.slice(0, firstBlankLineIndex) + '<break time="750ms"/>' + ssmlBody.slice(firstBlankLineIndex);
         }
 
-        // 3. Add 600ms break after news item headlines
+        // 3. Add 500ms break between individual ticker items in Section 3
+        ssmlBody = ssmlBody.replace(/(- (?:S&P 500|NASDAQ|Bitcoin|SPCX|Rocket Lab):[^\n]+)/g, '$1 <break time="500ms"/>');
+
+        // 4. Add 600ms break after news item headlines
         ssmlBody = ssmlBody.replace(/(\*\s*\*\*[^*]+:\*\*)/g, '$1 <break time="600ms"/>');
 
         // Escape XML characters safely
