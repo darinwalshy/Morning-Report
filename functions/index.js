@@ -5,7 +5,6 @@ import { getAuth } from "firebase-admin/auth";
 import { getAppCheck } from "firebase-admin/app-check";
 import { getFirestore, FieldValue } from "firebase-admin/firestore";
 import * as functions from "firebase-functions";
-import { GoogleGenAI } from "@google/genai";
 
 initializeApp();
 
@@ -18,6 +17,35 @@ const DEFAULT_LATITUDE = 0.0436;
 const DEFAULT_LONGITUDE = 32.4418;
 const DEFAULT_MODEL = "gemini-3.6-flash";
 const DEFAULT_VOICE = "en-US-Studio-O";
+
+// Helper function to fetch with explicit timeout and retry logic
+async function fetchWithRetryAndTimeout(url, options = {}, retries = 3, timeoutMs = 8000) {
+  for (let i = 0; i < retries; i++) {
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+
+      const response = await fetch(url, { ...options, signal: controller.signal });
+      clearTimeout(timeoutId);
+
+      if (response.ok) {
+        return response;
+      }
+      console.warn(`Attempt ${i + 1} for ${url} failed with status:${response.status}`);
+    } catch (err) {
+      if (err.name === 'AbortError') {
+        console.warn(`Attempt ${i + 1} for ${url} timed out after${timeoutMs}ms`);
+      } else {
+        console.warn(`Attempt ${i + 1} for${url} encountered network error:`, err.message);
+      }
+    }
+
+    if (i < retries - 1) {
+      await new Promise((resolve) => setTimeout(resolve, 1000));
+    }
+  }
+  return null;
+}
 
 // WMO Weather Code Translator Helper
 function getWeatherCondition(code) {
@@ -207,9 +235,9 @@ export const generateBriefing = functions.https.onRequest(
       try {
         const weatherUrl = `https://api.open-meteo.com/v1/forecast?latitude=${latitude}&longitude=${longitude}&current=temperature_2m,relative_humidity_2m,weather_code&daily=temperature_2m_max,temperature_2m_min,precipitation_probability_max,wind_speed_10m_max,sunrise,sunset,moonrise,moonset,moon_phase&temperature_unit=celsius&timeformat=unixtime&timezone=Africa%2FKampala`;
         
-        const weatherResponse = await fetch(weatherUrl);
-        if (!weatherResponse.ok) {
-          throw new Error(`Open-Meteo returned status ${weatherResponse.status}`);
+        const weatherResponse = await fetchWithRetryAndTimeout(weatherUrl, {}, 3, 6000);
+        if (!weatherResponse) {
+          throw new Error("Open-Meteo request failed after retries.");
         }
 
         const weatherData = await weatherResponse.json();
@@ -258,20 +286,45 @@ Moon Illumination: ${moonIllumination}
         return;
       }
 
-      // 6. Fetch Observed Station Weather (NOAA METAR for HUEN - Entebbe Airport)
+      // 6. Fetch Observed Station Weather (NOAA METAR with Retry & Fallback)
       let metarContext = "";
+      const fetchHeaders = {
+        "User-Agent": "MorningReportPWA/1.22 (https://darinwalshy.github.io/Morning-Report/)"
+      };
+
       try {
-        const metarUrl = "https://tgftp.nws.noaa.gov/data/observations/metar/stations/HUEN.TXT";
-        const metarResponse = await fetch(metarUrl);
-        if (metarResponse.ok) {
-          const metarRaw = await metarResponse.text();
+        // Primary Attempt: Legacy NOAA FTP HTTP Server with Retries & 6s Timeout
+        const metarPrimaryUrl = "https://tgftp.nws.noaa.gov/data/observations/metar/stations/HUEN.TXT";
+        const primaryResponse = await fetchWithRetryAndTimeout(metarPrimaryUrl, { headers: fetchHeaders }, 3, 6000);
+
+        if (primaryResponse) {
+          const metarRaw = await primaryResponse.text();
           metarContext = metarRaw.trim();
+          console.log("Successfully fetched METAR observation from primary endpoint.");
+          console.log("Raw METAR text:", metarContext);
         } else {
-          console.warn(`NOAA METAR returned status: ${metarResponse.status}`);
-          metarContext = "NOAA METAR station data currently unavailable.";
+          console.error("Primary NOAA METAR endpoint failed after retries. Attempting fallback endpoint...");
+          
+          // Secondary Fallback Attempt: NOAA Aviation Weather Center REST API
+          const metarFallbackUrl = "https://aviationweather.gov/api/data/metar?ids=HUEN&format=raw";
+          const fallbackResponse = await fetchWithRetryAndTimeout(metarFallbackUrl, { headers: fetchHeaders }, 2, 6000);
+
+          if (fallbackResponse) {
+            const metarFallbackRaw = await fallbackResponse.text();
+            if (metarFallbackRaw && metarFallbackRaw.trim().length > 0) {
+              metarContext = metarFallbackRaw.trim();
+              console.log("Successfully fetched METAR observation from fallback endpoint.");
+            } else {
+              console.error("Fallback NOAA METAR endpoint returned an empty body.");
+              metarContext = "NOAA METAR station data currently unavailable.";
+            }
+          } else {
+            console.error("Fallback NOAA METAR endpoint failed after retries.");
+            metarContext = "NOAA METAR station data currently unavailable.";
+          }
         }
       } catch (metarErr) {
-        console.error("NOAA METAR fetch failed:", metarErr);
+        console.error("NOAA METAR fetch process encountered an exception:", metarErr);
         metarContext = "NOAA METAR station data currently unavailable.";
       }
 
@@ -279,7 +332,7 @@ Moon Illumination: ${moonIllumination}
       let financeContext = "";
       try {
         const { default: YahooFinance } = await import("yahoo-finance2");
-        const yahooFinance = new YahooFinance();
+        const yahooFinance = new YahooFinance({ suppressNotices: ["yahooSurvey"] });
 
         const tickers = ["^GSPC", "^IXIC", "BTC-USD", "SPCX", "RKLB"];
         const quotes = await Promise.all(
@@ -357,6 +410,8 @@ Moon Illumination: ${moonIllumination}
         throw new Error("GEMINI_API_KEY environment variable is missing.");
       }
 
+      // Dynamically import GoogleGenAI to ensure ultra-fast function loading during deployment
+      const { GoogleGenAI } = await import("@google/genai");
       const ai = new GoogleGenAI({ apiKey });
       const nameInstruction = userName 
         ? `The user's name is ${userName}. Incorporate their name naturally into your opening greeting.` 
@@ -389,7 +444,7 @@ Structure the rest of the output with a blank line before each section title:
 
 1. **Weather Overview:** Synthesize the model forecast data into a friendly, natural narrative starting immediately with the current weather conditions. Cover current temperature, relative humidity, absolute humidity (g/m³), high/low range, rain odds, wind speed, sunrise/sunset times, and astronomical highlights (moonrise/moonset, moon phase, and illumination percentage). Use Celsius for all temperatures.
 
-2. **Actual Station Measurements:** Parse and translate the provided HUEN METAR station text into clear, readable surface measurements. Detail the actual measured surface temperature, dew point, relative wind speed and direction, barometric sea-level pressure (QNH in hPa/mbar), cloud cover, horizontal visibility, and state the exact observation timestamp converted into local East Africa Time (EAT). If METAR data is unavailable, state: "Actual station observations are currently unavailable."
+2. **Actual Station Measurements:** Parse and translate whatever valid fields are present in the provided HUEN METAR station text into clear, readable surface measurements. Detail the actual measured surface temperature, dew point, relative wind speed and direction, barometric sea-level pressure (QNH in hPa/mbar), cloud cover, horizontal visibility, and state the exact observation timestamp converted into local East Africa Time (EAT). Only state "Actual station observations are currently unavailable." if the raw METAR text is entirely empty or explicitly missing.
 
 3. **Market & Financial Summary:** Present the latest levels and price changes for the S&P 500, NASDAQ, Bitcoin, SPCX, and Rocket Lab using the provided context.
 - Format each item using ONLY its full plain-text name (e.g., "S&P 500" or "Bitcoin"), completely omitting ticker symbols, parentheses, or caret symbols like "^GSPC" or "BTC-USD".
