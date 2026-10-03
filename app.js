@@ -1,3 +1,5 @@
+// app.js
+
 const FUNCTION_URL = "https://us-central1-morning-report-3afe0.cloudfunctions.net/generateBriefing";
 
 let currentAudio = null;
