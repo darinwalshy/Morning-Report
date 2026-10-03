@@ -152,6 +152,7 @@ export const generateBriefing = functions.https.onRequest(
       res.set("Access-Control-Allow-Origin", ALLOWED_ORIGIN);
     }
     res.set("Access-Control-Allow-Headers", "Authorization, Content-Type, X-Firebase-AppCheck");
+    res.set("Access-Control-Allow-Methods", "POST, OPTIONS");
 
     if (req.method === "OPTIONS") {
       res.status(204).send("");
