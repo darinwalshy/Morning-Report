@@ -246,7 +246,7 @@
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
         import { getAuth, signInWithEmailAndPassword, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js";
-        import { initializeAppCheck, ReCaptchaEnterpriseProvider, getToken } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app-check.js";
+        import { initializeAppCheck, ReCaptchaEnterpriseProvider, getToken, getLimitedUseToken } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app-check.js";
 
         const firebaseConfig = {
             apiKey: "AIzaSyC0iK84tNEKviLoxj2QCDDstW-zH-mOI-s",
@@ -268,6 +268,7 @@
         window.auth = auth;
         window.appCheck = appCheck;
         window.getAppCheckToken = getToken;
+        window.getLimitedUseToken = getLimitedUseToken;
         window.signInWithEmailAndPassword = signInWithEmailAndPassword;
         window.onAuthStateChanged = onAuthStateChanged;
         window.signOut = signOut;

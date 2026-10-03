@@ -174,8 +174,8 @@ async function fetchBriefing() {
     const idToken = await user.getIdToken(true);
     
     let appCheckTokenResult = null;
-    if (window.appCheck && window.getAppCheckToken) {
-      appCheckTokenResult = await window.getAppCheckToken(window.appCheck, false);
+    if (window.appCheck && window.getLimitedUseToken) {
+      appCheckTokenResult = await window.getLimitedUseToken(window.appCheck);
     }
 
     const headers = {
