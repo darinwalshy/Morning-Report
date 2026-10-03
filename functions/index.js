@@ -65,6 +65,27 @@ async function fetchWithRetryAndTimeout(url, options = {}, retries = 3, timeoutM
   return null;
 }
 
+// Fetch Verse of the Day from OurManna API
+async function fetchVerseOfTheDay() {
+  const votdUrl = "https://beta.ourmanna.com/api/v1/get?format=json&order=daily";
+  try {
+    const response = await fetchWithRetryAndTimeout(votdUrl, {}, 3, 5000);
+    if (response) {
+      const data = await response.json();
+      const text = data?.verse?.details?.text;
+      const reference = data?.verse?.details?.reference;
+      const version = data?.verse?.details?.version || "NIV";
+
+      if (text && reference) {
+        return `Verse: "${text}" - ${reference} (${version})`;
+      }
+    }
+  } catch (err) {
+    console.error("Failed to fetch Verse of the Day from OurManna:", err);
+  }
+  return null;
+}
+
 // Moon Phase Translator Helper
 function getMoonPhaseName(phase) {
   if (phase === undefined || phase === null) return "Unknown";
@@ -469,7 +490,10 @@ Barometric Sea-Level Pressure: ${parsedMetar.barometricPressure}
         financeContext = "Financial market data currently unavailable.";
       }
 
-      // 9. Generate Content via Gemini API
+      // 9. Fetch Verse of the Day
+      const votdContext = await fetchVerseOfTheDay();
+
+      // 10. Generate Content via Gemini API
       const apiKey = process.env.GEMINI_API_KEY;
       if (!apiKey) {
         throw new Error("GEMINI_API_KEY environment variable is missing.");
@@ -480,6 +504,10 @@ Barometric Sea-Level Pressure: ${parsedMetar.barometricPressure}
       const nameInstruction = userName 
         ? `The user's name is ${userName}. Incorporate their name naturally into your opening greeting.` 
         : "Address the user in a warm, welcoming opening greeting.";
+
+      const votdInstruction = votdContext
+        ? `Here is today's scripture: ${votdContext}\nPresent this exact verse and reference clearly, followed by a brief 2-sentence practical reflection on applying its message of faith, stewardship, or wisdom to the day ahead.`
+        : "Present an inspiring Bible verse along with its full Scripture reference (book, chapter, and verse). Follow the verse with a brief 2-sentence practical reflection on applying its message of faith, stewardship, or wisdom to the day ahead.";
 
       const prompt = `
 You are a warm, helpful personal morning assistant. ${nameInstruction}
@@ -546,7 +574,7 @@ Format example:
 * **News Item 3: Headline Title Here:** Thorough 4 to 5 sentence summary explaining what happened and why it matters.
 If fewer than 5 major stories are available on a light news day, provide as many as are relevant (down to 1). If live news search yields no results or fails, output: "News highlights are currently unavailable."
 
-4. **Verse of the Day:** Present an inspiring Bible verse along with its full Scripture reference (book, chapter, and verse). Follow the verse with a brief 2-sentence practical reflection on applying its message of faith, stewardship, or wisdom to the day ahead.
+4. **Verse of the Day:** ${votdInstruction}
 `.trim();
 
       let rawText = "";
@@ -575,7 +603,7 @@ If fewer than 5 major stories are available on a light news day, provide as many
 
       rawText = rawText.replace(/^#+\s*/gm, "");
 
-      // 10. Synthesize Audio via Google Cloud TTS
+      // 11. Synthesize Audio via Google Cloud TTS
       let audioBase64 = null;
       let actualVoiceUsed = requestedVoice;
       let voiceFallbackOccurred = false;
