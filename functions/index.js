@@ -12,11 +12,29 @@ const db = getFirestore("morningreport");
 const ALLOWED_ORIGIN = "https://darinwalshy.github.io";
 const MAX_DAILY_REQUESTS = 50;
 
-// Default Coordinates: Entebbe International Airport, Uganda
+// Default Settings
 const DEFAULT_LATITUDE = 0.0436;
 const DEFAULT_LONGITUDE = 32.4418;
 const DEFAULT_MODEL = "gemini-3.6-flash";
 const DEFAULT_VOICE = "en-US-Studio-O";
+
+// Hardened Allowlists
+const ALLOWED_MODELS = new Set([
+  "gemini-3.6-flash",
+  "gemini-3.5-flash-lite",
+  "gemini-3.1-flash-lite"
+]);
+
+const ALLOWED_VOICES = new Set([
+  // Studio Tier
+  "en-US-Studio-O", "en-US-Studio-Q", "en-GB-Studio-B", "en-GB-Studio-C",
+  // Neural2 Tier
+  "en-US-Neural2-F", "en-US-Neural2-J", "en-US-Neural2-D",
+  "en-GB-Neural2-A", "en-GB-Neural2-B", "en-GB-Neural2-C", "en-GB-Neural2-D", "en-GB-Neural2-F",
+  // Standard Tier
+  "en-US-Standard-C", "en-US-Standard-D",
+  "en-GB-Standard-A", "en-GB-Standard-B", "en-GB-Standard-C", "en-GB-Standard-D"
+]);
 
 // Helper function to fetch with explicit timeout and retry logic
 async function fetchWithRetryAndTimeout(url, options = {}, retries = 3, timeoutMs = 8000) {
@@ -50,39 +68,20 @@ async function fetchWithRetryAndTimeout(url, options = {}, retries = 3, timeoutM
 // WMO Weather Code Translator Helper
 function getWeatherCondition(code) {
   const weatherMap = {
-    0: "Clear sky",
-    1: "Mainly clear",
-    2: "Partly cloudy",
-    3: "Overcast",
-    45: "Foggy",
-    48: "Depositing rime fog",
-    51: "Light drizzle",
-    53: "Moderate drizzle",
-    55: "Dense drizzle",
-    56: "Light freezing drizzle",
-    57: "Dense freezing drizzle",
-    61: "Slight rain",
-    63: "Moderate rain",
-    65: "Heavy rain",
-    66: "Light freezing rain",
-    67: "Heavy freezing rain",
-    71: "Slight snow fall",
-    73: "Moderate snow fall",
-    75: "Heavy snow fall",
-    77: "Snow grains",
-    80: "Slight rain showers",
-    81: "Moderate rain showers",
-    82: "Violent rain showers",
-    85: "Slight snow showers",
-    86: "Heavy snow showers",
-    95: "Thunderstorm",
-    96: "Thunderstorm with slight hail",
+    0: "Clear sky", 1: "Mainly clear", 2: "Partly cloudy", 3: "Overcast",
+    45: "Foggy", 48: "Depositing rime fog", 51: "Light drizzle", 53: "Moderate drizzle",
+    55: "Dense drizzle", 56: "Light freezing drizzle", 57: "Dense freezing drizzle",
+    61: "Slight rain", 63: "Moderate rain", 65: "Heavy rain", 66: "Light freezing rain",
+    67: "Heavy freezing rain", 71: "Slight snow fall", 73: "Moderate snow fall",
+    75: "Heavy snow fall", 77: "Snow grains", 80: "Slight rain showers",
+    81: "Moderate rain showers", 82: "Violent rain showers", 85: "Slight snow showers",
+    86: "Heavy snow showers", 95: "Thunderstorm", 96: "Thunderstorm with slight hail",
     99: "Thunderstorm with heavy hail"
   };
   return weatherMap[code] || "Unknown weather conditions";
 }
 
-// Moon Phase Translator Helper with Buffer Windows
+// Moon Phase Translator Helper
 function getMoonPhaseName(phase) {
   if (phase === undefined || phase === null) return "Unknown";
   if (phase <= 0.02 || phase >= 0.98) return "New Moon";
@@ -103,7 +102,7 @@ function calculateAbsoluteHumidity(tempC, relativeHumidity) {
   return `${absoluteHumidity.toFixed(2)} g/m³`;
 }
 
-// Moon Illumination Percentage Calculation Helper
+// Moon Illumination Percentage Helper
 function getMoonIllumination(phase) {
   if (phase === undefined || phase === null) return "N/A";
   const illumination = ((1 - Math.cos(2 * Math.PI * phase)) / 2) * 100;
@@ -126,14 +125,14 @@ function formatLocalTime(timestamp) {
   }
 }
 
-// Helper to format a number to 3 significant figures formatted with commas
+// Helper to format a number to 3 significant figures
 function formatToThreeSigFigs(num) {
   if (typeof num !== "number" || isNaN(num)) return "N/A";
   const roundedVal = Number(num.toPrecision(3));
   return new Intl.NumberFormat("en-US").format(roundedVal);
 }
 
-// Helper to format a number rounded to the nearest whole integer with commas
+// Helper to format a number rounded to the nearest whole integer
 function formatToWholeInteger(num) {
   if (typeof num !== "number" || isNaN(num)) return "N/A";
   const roundedVal = Math.round(num);
@@ -143,8 +142,8 @@ function formatToWholeInteger(num) {
 export const generateBriefing = functions.https.onRequest(
   { 
     secrets: ["GEMINI_API_KEY"],
-    timeoutSeconds: 120, // Increases Cloud Function timeout limit to 2 minutes
-    memory: "512MiB"     // Provides extra compute resources for faster TTS processing
+    timeoutSeconds: 120,
+    memory: "512MiB"
   },
   async (req, res) => {
     // 1. CORS Setup
@@ -167,7 +166,6 @@ export const generateBriefing = functions.https.onRequest(
     try {
       // 2. Verify App Check Token
       const appCheckToken = req.headers["x-firebase-appcheck"];
-
       if (!appCheckToken || appCheckToken === "undefined" || appCheckToken === "null") {
         res.status(401).json({ error: "Unauthorized: Missing or invalid App Check token." });
         return;
@@ -192,15 +190,33 @@ export const generateBriefing = functions.https.onRequest(
       const decodedToken = await getAuth().verifyIdToken(idToken);
       const userId = decodedToken.uid;
 
-      // Parse user settings from client payload
+      // 4. Sanitize and Validate Request Payload
       const userSettings = req.body.settings || {};
-      const userName = userSettings.userName ? userSettings.userName.trim() : "";
-      const latitude = typeof userSettings.latitude === "number" ? userSettings.latitude : DEFAULT_LATITUDE;
-      const longitude = typeof userSettings.longitude === "number" ? userSettings.longitude : DEFAULT_LONGITUDE;
-      const requestedModel = userSettings.model || DEFAULT_MODEL;
-      const requestedVoice = userSettings.voice || DEFAULT_VOICE;
+      
+      const userName = typeof userSettings.userName === "string" 
+        ? userSettings.userName.trim().replace(/[\r\n\t]/g, " ").slice(0, 50) 
+        : "";
 
-      // 4. Atomic Rate Limiting via Firestore Transaction
+      const rawLat = Number(userSettings.latitude);
+      const rawLng = Number(userSettings.longitude);
+
+      const latitude = (Number.isFinite(rawLat) && rawLat >= -90 && rawLat <= 90) 
+        ? rawLat 
+        : DEFAULT_LATITUDE;
+
+      const longitude = (Number.isFinite(rawLng) && rawLng >= -180 && rawLng <= 180) 
+        ? rawLng 
+        : DEFAULT_LONGITUDE;
+
+      const requestedModel = ALLOWED_MODELS.has(userSettings.model) 
+        ? userSettings.model 
+        : DEFAULT_MODEL;
+
+      const requestedVoice = ALLOWED_VOICES.has(userSettings.voice) 
+        ? userSettings.voice 
+        : DEFAULT_VOICE;
+
+      // 5. Atomic Rate Limiting via Firestore Transaction
       const todayStr = new Date().toISOString().split("T")[0];
       const rateLimitRef = db.collection("rate_limits").doc(`${userId}_${todayStr}`);
 
@@ -230,7 +246,7 @@ export const generateBriefing = functions.https.onRequest(
         throw transactionErr;
       }
 
-      // 5. Fetch Open-Meteo Forecast Weather Data
+      // 6. Fetch Open-Meteo Forecast Weather Data
       let weatherContext = "";
       try {
         const weatherUrl = `https://api.open-meteo.com/v1/forecast?latitude=${latitude}&longitude=${longitude}&current=temperature_2m,relative_humidity_2m,weather_code&daily=temperature_2m_max,temperature_2m_min,precipitation_probability_max,wind_speed_10m_max,sunrise,sunset,moonrise,moonset,moon_phase&temperature_unit=celsius&timeformat=unixtime&timezone=Africa%2FKampala`;
@@ -286,49 +302,36 @@ Moon Illumination: ${moonIllumination}
         return;
       }
 
-      // 6. Fetch Observed Station Weather (NOAA METAR with Retry & Fallback)
+      // 7. Fetch Observed Station Weather (NOAA METAR)
       let metarContext = "";
       const fetchHeaders = {
         "User-Agent": "MorningReportPWA/1.22 (https://darinwalshy.github.io/Morning-Report/)"
       };
 
       try {
-        // Primary Attempt: Legacy NOAA FTP HTTP Server with Retries & 6s Timeout
         const metarPrimaryUrl = "https://tgftp.nws.noaa.gov/data/observations/metar/stations/HUEN.TXT";
         const primaryResponse = await fetchWithRetryAndTimeout(metarPrimaryUrl, { headers: fetchHeaders }, 3, 6000);
 
         if (primaryResponse) {
           const metarRaw = await primaryResponse.text();
           metarContext = metarRaw.trim();
-          console.log("Successfully fetched METAR observation from primary endpoint.");
-          console.log("Raw METAR text:", metarContext);
         } else {
-          console.error("Primary NOAA METAR endpoint failed after retries. Attempting fallback endpoint...");
-          
-          // Secondary Fallback Attempt: NOAA Aviation Weather Center REST API
           const metarFallbackUrl = "https://aviationweather.gov/api/data/metar?ids=HUEN&format=raw";
           const fallbackResponse = await fetchWithRetryAndTimeout(metarFallbackUrl, { headers: fetchHeaders }, 2, 6000);
 
           if (fallbackResponse) {
             const metarFallbackRaw = await fallbackResponse.text();
-            if (metarFallbackRaw && metarFallbackRaw.trim().length > 0) {
-              metarContext = metarFallbackRaw.trim();
-              console.log("Successfully fetched METAR observation from fallback endpoint.");
-            } else {
-              console.error("Fallback NOAA METAR endpoint returned an empty body.");
-              metarContext = "NOAA METAR station data currently unavailable.";
-            }
+            metarContext = metarFallbackRaw ? metarFallbackRaw.trim() : "NOAA METAR station data currently unavailable.";
           } else {
-            console.error("Fallback NOAA METAR endpoint failed after retries.");
             metarContext = "NOAA METAR station data currently unavailable.";
           }
         }
       } catch (metarErr) {
-        console.error("NOAA METAR fetch process encountered an exception:", metarErr);
+        console.error("NOAA METAR fetch failed:", metarErr);
         metarContext = "NOAA METAR station data currently unavailable.";
       }
 
-      // 7. Fetch Financial Data via yahoo-finance2
+      // 8. Fetch Financial Data via yahoo-finance2
       let financeContext = "";
       try {
         const { default: YahooFinance } = await import("yahoo-finance2");
@@ -360,57 +363,43 @@ Moon Illumination: ${moonIllumination}
             return `${name} (${q.symbol}): N/A`;
           }
 
-          // Dynamic thresholds: 1.0% for broad market indices, 2.0% for single stocks/crypto
           const threshold = (q.symbol === "^GSPC" || q.symbol === "^IXIC") ? 1.0 : 2.0;
           const isSignificantMove = Math.abs(changePercentVal) >= threshold;
           const sign = changeVal >= 0 ? "+" : "";
           const formattedPercent = `${sign}${changePercentVal.toFixed(2)}%`;
 
-          // Indices: S&P 500 and NASDAQ (3 Sig Figs, no '$', percentage change only)
           if (q.symbol === "^GSPC" || q.symbol === "^IXIC") {
             const formattedPrice = formatToThreeSigFigs(priceVal);
-            if (!isSignificantMove) {
-              return `${name} (${q.symbol}):${formattedPrice}.`;
-            }
-            return `${name} (${q.symbol}): ${formattedPrice} (${formattedPercent}).`;
+            return isSignificantMove 
+              ? `${name} (${q.symbol}): ${formattedPrice} (${formattedPercent}).`
+              : `${name} (${q.symbol}):${formattedPrice}.`;
           }
 
-          // Bitcoin: (3 Sig Figs, with '$', raw dollar change and percentage change)
           if (q.symbol === "BTC-USD") {
             const formattedPrice = formatToThreeSigFigs(priceVal);
-            if (!isSignificantMove) {
-              return `${name} (${q.symbol}):$${formattedPrice}.`;
-            }
+            if (!isSignificantMove) return `${name} (${q.symbol}):$${formattedPrice}.`;
             const formattedRawChange = `${sign}$${formatToThreeSigFigs(Math.abs(changeVal))}`;
             return `${name} (${q.symbol}):$${formattedPrice} (${formattedPercent},${formattedRawChange}).`;
           }
 
-          // Stocks/ETFs: SPCX and RKLB (Whole Integer, with '$', raw dollar change and percentage change)
           const formattedPrice = formatToWholeInteger(priceVal);
-          if (!isSignificantMove) {
-            return `${name} (${q.symbol}):$${formattedPrice}.`;
-          }
+          if (!isSignificantMove) return `${name} (${q.symbol}):$${formattedPrice}.`;
           const formattedRawChange = `${sign}$${formatToWholeInteger(Math.abs(changeVal))}`;
           return `${name} (${q.symbol}):$${formattedPrice} (${formattedPercent},${formattedRawChange}).`;
         });
 
-        if (financeLines.length > 0) {
-          financeContext = financeLines.join("\n");
-        } else {
-          financeContext = "Financial market data currently unavailable.";
-        }
+        financeContext = financeLines.length > 0 ? financeLines.join("\n") : "Financial market data currently unavailable.";
       } catch (finErr) {
         console.error("Yahoo Finance fetch failed:", finErr);
         financeContext = "Financial market data currently unavailable.";
       }
 
-      // 8. Generate Content via Gemini API with Fallback Handling
+      // 9. Generate Content via Gemini API
       const apiKey = process.env.GEMINI_API_KEY;
       if (!apiKey) {
         throw new Error("GEMINI_API_KEY environment variable is missing.");
       }
 
-      // Dynamically import GoogleGenAI to ensure ultra-fast function loading during deployment
       const { GoogleGenAI } = await import("@google/genai");
       const ai = new GoogleGenAI({ apiKey });
       const nameInstruction = userName 
@@ -476,9 +465,7 @@ If fewer than 5 major stories are available on a light news day, provide as many
         const response = await ai.models.generateContent({
           model: requestedModel,
           contents: prompt,
-          config: {
-            tools: [{ googleSearch: {} }]
-          }
+          config: { tools: [{ googleSearch: {} }] }
         });
         rawText = response.text || "";
       } catch (geminiErr) {
@@ -489,16 +476,14 @@ If fewer than 5 major stories are available on a light news day, provide as many
         const fallbackResponse = await ai.models.generateContent({
           model: DEFAULT_MODEL,
           contents: prompt,
-          config: {
-            tools: [{ googleSearch: {} }]
-          }
+          config: { tools: [{ googleSearch: {} }] }
         });
         rawText = fallbackResponse.text || "";
       }
 
       rawText = rawText.replace(/^#+\s*/gm, "");
 
-      // 9. Synthesize Audio via Google Cloud TTS with SSML Pauses
+      // 10. Synthesize Audio via Google Cloud TTS
       let audioBase64 = null;
       let actualVoiceUsed = requestedVoice;
       let voiceFallbackOccurred = false;
@@ -507,35 +492,26 @@ If fewer than 5 major stories are available on a light news day, provide as many
         const { TextToSpeechClient } = await import("@google-cloud/text-to-speech");
         const ttsClient = new TextToSpeechClient();
 
-        // Strip raw markdown formatting
         let cleanText = rawText.replace(/[#*_`~]/g, "").trim();
 
-        // Inject SSML pauses into speech stream
-        // 1. Add 1.5s break before main section titles
+        // Inject SSML pauses
         let ssmlBody = cleanText.replace(/\n\n(?=Weather Overview|Actual Station Measurements|Market & Financial Summary|Key News Highlights|Verse of the Day)/g, '<break time="1500ms"/>\n\n');
         
-        // 2. Add 750ms break after opening greeting
         const firstBlankLineIndex = ssmlBody.indexOf("\n\n");
         if (firstBlankLineIndex !== -1) {
           ssmlBody = ssmlBody.slice(0, firstBlankLineIndex) + '<break time="750ms"/>' + ssmlBody.slice(firstBlankLineIndex);
         }
 
-        // 3. Add 500ms break between individual ticker items in Section 3
         ssmlBody = ssmlBody.replace(/(- (?:S&P 500|NASDAQ|Bitcoin|SPCX|Rocket Lab):[^\n]+)/g, '$1 <break time="500ms"/>');
-
-        // 4. Add 600ms break after news item headlines
         ssmlBody = ssmlBody.replace(/(\*\s*\*\*[^*]+:\*\*)/g, '$1 <break time="600ms"/>');
 
-        // Escape XML characters safely
         ssmlBody = ssmlBody
           .replace(/&/g, "&amp;")
           .replace(/</g, "&lt;")
           .replace(/>/g, "&gt;")
           .replace(/&lt;break time="(\d+ms)"\/&gt;/g, '<break time="$1"/>');
 
-        // Wrap with 500ms initial lead-in pause
         let ssmlText = `<speak><break time="500ms"/>${ssmlBody}</speak>`;
-
         if (ssmlText.length > 4900) {
           ssmlText = ssmlText.slice(0, 4900) + "</speak>";
         }
