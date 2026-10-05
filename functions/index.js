@@ -5,6 +5,9 @@ import { getAuth } from "firebase-admin/auth";
 import { getAppCheck } from "firebase-admin/app-check";
 import { getFirestore, FieldValue } from "firebase-admin/firestore";
 import * as functions from "firebase-functions";
+import { onSchedule } from "firebase-functions/v2/scheduler";
+import { executeAppEEARSSync } from "./appeears.js";
+import { saveSoilMoistureRecords, getSoilMoistureBriefingContext } from "./firestoreSoilMoisture.js";
 
 initializeApp();
 
@@ -234,6 +237,86 @@ function formatToWholeInteger(num) {
   const roundedVal = Math.round(num);
   return new Intl.NumberFormat("en-US").format(roundedVal);
 }
+
+export const syncSoilMoistureDaily = onSchedule(
+  {
+    schedule: "0 23 * * *", // 23:00 UTC = 2:00 AM EAT
+    timeZone: "UTC",
+    secrets: ["EARTHDATA_USERNAME", "EARTHDATA_PASSWORD"],
+    timeoutSeconds: 900,
+    memory: "512MiB"
+  },
+  async (event) => {
+    console.log("Starting scheduled NASA AppEEARS soil moisture sync...");
+
+    const username = process.env.EARTHDATA_USERNAME;
+    const password = process.env.EARTHDATA_PASSWORD;
+
+    if (!username || !password) {
+      console.error("Earthdata credentials missing from environment.");
+      return;
+    }
+
+    const endDate = new Date();
+    const startDate = new Date(endDate.getTime() - 7 * 86400000); // 7-day window
+
+    const startDateStr = startDate.toISOString().split("T")[0];
+    const endDateStr = endDate.toISOString().split("T")[0];
+
+    try {
+      const records = await executeAppEEARSSync(username, password, startDateStr, endDateStr, "cron_smap_sync");
+      const savedCount = await saveSoilMoistureRecords(records);
+      console.log(`Successfully synced and updated ${savedCount} soil moisture records in Firestore.`);
+    } catch (err) {
+      console.error("Failed executing scheduled AppEEARS sync:", err);
+    }
+  }
+);
+
+export const syncSoilMoistureAdmin = functions.https.onRequest(
+  {
+    secrets: ["EARTHDATA_USERNAME", "EARTHDATA_PASSWORD"],
+    timeoutSeconds: 900,
+    memory: "512MiB"
+  },
+  async (req, res) => {
+    if (req.method !== "POST") {
+      res.status(405).json({ error: "Method Not Allowed" });
+      return;
+    }
+
+    const username = process.env.EARTHDATA_USERNAME;
+    const password = process.env.EARTHDATA_PASSWORD;
+
+    if (!username || !password) {
+      res.status(500).json({ error: "Earthdata credentials missing." });
+      return;
+    }
+
+    const isBackfill = req.body?.backfill === true;
+    const daysToFetch = isBackfill ? 365 : 7;
+
+    const endDate = new Date();
+    const startDate = new Date(endDate.getTime() - daysToFetch * 86400000);
+
+    const startDateStr = startDate.toISOString().split("T")[0];
+    const endDateStr = endDate.toISOString().split("T")[0];
+
+    try {
+      console.log(`Executing manual admin sync (${daysToFetch} days)...`);
+      const records = await executeAppEEARSSync(username, password, startDateStr, endDateStr, isBackfill ? "admin_backfill" : "admin_sync");
+      const savedCount = await saveSoilMoistureRecords(records);
+
+      res.status(200).json({
+        success: true,
+        message: `Synced ${savedCount} daily records for range ${startDateStr} to ${endDateStr}.`
+      });
+    } catch (err) {
+      console.error("Admin sync failed:", err);
+      res.status(500).json({ error: err.message });
+    }
+  }
+);
 
 export const generateBriefing = functions.https.onRequest(
   { 
@@ -493,6 +576,9 @@ Barometric Sea-Level Pressure: ${parsedMetar.barometricPressure}
       // 9. Fetch Verse of the Day
       const votdContext = await fetchVerseOfTheDay();
 
+      // 9b. Fetch Soil Moisture Context from Firestore
+      const soilMoistureContext = await getSoilMoistureBriefingContext();
+
       // 10. Generate Content via Gemini API
       const apiKey = process.env.GEMINI_API_KEY;
       if (!apiKey) {
@@ -523,6 +609,9 @@ ${metarContext}
 
 Astronomical Data:
 ${astroContext}
+
+Soil Moisture Metrics (SMAP L4):
+${soilMoistureContext}
 
 Market Data:
 ${financeContext}
@@ -555,14 +644,19 @@ Structure the rest of the output with a blank line before each section title:
 - If Entebbe station data is marked unavailable, state that briefly and present the astronomical data.
 - If astronomical data is marked unavailable, state that briefly and present the station observations.
 
-2. **Market & Financial Summary:** Present the latest levels and price changes for the S&P 500, NASDAQ, Bitcoin, SPCX, and Rocket Lab using the provided context.
+2. **Soil Moisture:** Synthesize the SMAP soil moisture metrics for Mubende, Iganga, and Masindi into a clear agricultural and hydrological report.
+- Present current surface (0-5cm) and root zone (0-100cm) volumetric moisture readings.
+- Highlight significant 7-day, 30-day, or 1-year comparative trends (e.g., drying trends or recent rain recharge).
+- If data for a location is unavailable, state that briefly.
+
+3. **Market & Financial Summary:** Present the latest levels and price changes for the S&P 500, NASDAQ, Bitcoin, SPCX, and Rocket Lab using the provided context.
 - Format each item using ONLY its full plain-text name (e.g., "S&P 500" or "Bitcoin"), completely omitting ticker symbols, parentheses, or caret symbols like "^GSPC" or "BTC-USD".
 - Ensure every single list item ends cleanly with a full stop period (.) to ensure proper text-to-speech cadence.
 - If a ticker is listed without daily percentage changes in the context, report its level directly without adding commentary.
 - For tickers where daily percentage changes ARE provided (indicating a significant move exceeding the threshold), provide a concise 1–2 sentence explanation detailing the primary news event, earnings report, or catalyst driving that specific price movement.
 - DO NOT include general macro market commentary unless tied directly to one of the significant ticker movements above.
 
-3. **Key News Highlights:** Search for up to 5 of the top pertinent news items originating from or strongly affecting Uganda today.
+4. **Key News Highlights:** Search for up to 5 of the top pertinent news items originating from or strongly affecting Uganda today.
 
 CRITICAL FORMATTING REQUIREMENT FOR NEWS ITEMS:
 Each news item MUST strictly start on a new line with a bullet point, followed by "News Item X:" where X is the item number, followed by the headline in bold and a colon.
@@ -574,7 +668,7 @@ Format example:
 * **News Item 3: Headline Title Here:** Thorough 4 to 5 sentence summary explaining what happened and why it matters.
 If fewer than 5 major stories are available on a light news day, provide as many as are relevant (down to 1). If live news search yields no results or fails, output: "News highlights are currently unavailable."
 
-4. **Verse of the Day:** ${votdInstruction}
+5. **Verse of the Day:** ${votdInstruction}
 `.trim();
 
       let rawText = "";
@@ -615,7 +709,7 @@ If fewer than 5 major stories are available on a light news day, provide as many
         let cleanText = rawText.replace(/[#*_`~]/g, "").trim();
 
         // Inject SSML pauses
-        let ssmlBody = cleanText.replace(/\n\n(?=Weather & Conditions|Market & Financial Summary|Key News Highlights|Verse of the Day)/g, '<break time="1500ms"/>\n\n');
+        let ssmlBody = cleanText.replace(/\n\n(?=Weather & Conditions|Soil Moisture|Market & Financial Summary|Key News Highlights|Verse of the Day)/g, '<break time="1500ms"/>\n\n');
         
         const firstBlankLineIndex = ssmlBody.indexOf("\n\n");
         if (firstBlankLineIndex !== -1) {
