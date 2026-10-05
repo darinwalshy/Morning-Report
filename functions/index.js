@@ -238,6 +238,13 @@ function formatToWholeInteger(num) {
   return new Intl.NumberFormat("en-US").format(roundedVal);
 }
 
+function formatDateAppEEARS(dateObj) {
+  const mm = String(dateObj.getMonth() + 1).padStart(2, "0");
+  const dd = String(dateObj.getDate()).padStart(2, "0");
+  const yyyy = dateObj.getFullYear();
+  return `${mm}-${dd}-${yyyy}`;
+}
+
 export const syncSoilMoistureDaily = onSchedule(
   {
     schedule: "0 23 * * *", // 23:00 UTC = 2:00 AM EAT
@@ -258,10 +265,10 @@ export const syncSoilMoistureDaily = onSchedule(
     }
 
     const endDate = new Date();
-    const startDate = new Date(endDate.getTime() - 7 * 86400000); // 7-day window
+    const startDate = new Date(endDate.getTime() - 7 * 86400000);
 
-    const startDateStr = startDate.toISOString().split("T")[0];
-    const endDateStr = endDate.toISOString().split("T")[0];
+    const startDateStr = formatDateAppEEARS(startDate);
+    const endDateStr = formatDateAppEEARS(endDate);
 
     try {
       const records = await executeAppEEARSSync(username, password, startDateStr, endDateStr, "cron_smap_sync");
@@ -299,8 +306,8 @@ export const syncSoilMoistureAdmin = functions.https.onRequest(
     const endDate = new Date();
     const startDate = new Date(endDate.getTime() - daysToFetch * 86400000);
 
-    const startDateStr = startDate.toISOString().split("T")[0];
-    const endDateStr = endDate.toISOString().split("T")[0];
+    const startDateStr = formatDateAppEEARS(startDate);
+    const endDateStr = formatDateAppEEARS(endDate);
 
     try {
       console.log(`Executing manual admin sync (${daysToFetch} days)...`);
