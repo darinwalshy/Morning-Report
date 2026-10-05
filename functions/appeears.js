@@ -9,7 +9,8 @@ const LOCATIONS = [
 ];
 
 const DATASET = "SPL4SMGP.008";
-const LAYERS = ["sm_surface", "sm_rootzone"];
+// Update 1: Use exact AppEEARS catalog layer keys
+const LAYERS = ["Geophysical_Data_sm_surface", "Geophysical_Data_sm_rootzone"];
 
 /**
  * Format a JavaScript Date object (or date string) to MM-DD-YYYY for AppEEARS
@@ -145,19 +146,26 @@ async function fetchTaskCsvData(token, taskId) {
 }
 
 /**
- * Basic CSV Parser to turn AppEEARS point CSV output into normalized records
+ * Updated CSV Parser: Handles wide-format AppEEARS CSV output where layers are columns
  */
 function parseAppEEARSCsv(csvText) {
   const lines = csvText.trim().split("\n");
   if (lines.length < 2) return [];
 
   const headers = lines[0].split(",").map((h) => h.trim().replace(/^"|"$/g, ""));
-  
-  // Find column indexes (handling AppEEARS CSV headers)
+
+  // Find standard metadata columns
   const idIdx = headers.findIndex((h) => h.toLowerCase() === "id" || h.toLowerCase() === "location_id");
   const dateIdx = headers.findIndex((h) => h.toLowerCase() === "date" || h.toLowerCase() === "date/time");
-  const layerIdx = headers.findIndex((h) => h.toLowerCase() === "layer" || h.toLowerCase() === "variable");
-  const valueIdx = headers.findIndex((h) => h.toLowerCase() === "value" || h.toLowerCase() === "data_value");
+
+  // Find layer columns by matching column header substrings
+  const rootzoneIdx = headers.findIndex((h) => h.includes("sm_rootzone"));
+  const surfaceIdx = headers.findIndex((h) => h.includes("sm_surface"));
+
+  if (idIdx === -1 || dateIdx === -1) {
+    console.warn("Could not locate required ID or Date columns in CSV header.");
+    return [];
+  }
 
   const recordsMap = {}; // Key: `${locationId}_${YYYY-MM-DD}`
 
@@ -167,45 +175,63 @@ function parseAppEEARSCsv(csvText) {
 
     const locId = cols[idIdx]?.toLowerCase();
     const rawDate = cols[dateIdx];
-    const layer = cols[layerIdx];
-    const rawVal = parseFloat(cols[valueIdx]);
 
-    if (!locId || !rawDate || !layer || isNaN(rawVal)) continue;
+    if (!locId || !rawDate) continue;
 
-    // Standardize date to YYYY-MM-DD for Firestore
+    // Standardize date to YYYY-MM-DD
     let dateStr = rawDate.split("T")[0].split(" ")[0];
     if (dateStr.includes("-") && dateStr.split("-")[0].length === 2) {
-      // If returned as MM-DD-YYYY, convert to YYYY-MM-DD
       const [m, d, y] = dateStr.split("-");
       dateStr = `${y}-${m}-${d}`;
     }
 
+    const rootzoneVal = rootzoneIdx !== -1 ? parseFloat(cols[rootzoneIdx]) : null;
+    const surfaceVal = surfaceIdx !== -1 ? parseFloat(cols[surfaceIdx]) : null;
+
     const key = `${locId}_${dateStr}`;
 
+    // AppEEARS reports multiple sub-daily readings (every 3 hours).
+    // Initialize or compute daily averages/latest value per date.
     if (!recordsMap[key]) {
       recordsMap[key] = {
         locationId: locId,
         date: dateStr,
-        sm_surface: null,
-        sm_rootzone: null
+        sm_surface: !isNaN(surfaceVal) ? surfaceVal : null,
+        sm_rootzone: !isNaN(rootzoneVal) ? rootzoneVal : null,
+        count: 1
       };
-    }
-
-    if (layer.includes("sm_surface")) {
-      recordsMap[key].sm_surface = rawVal;
-    } else if (layer.includes("sm_rootzone")) {
-      recordsMap[key].sm_rootzone = rawVal;
+    } else {
+      // Accumulate for daily average computation
+      if (!isNaN(surfaceVal)) {
+        recordsMap[key].sm_surface = recordsMap[key].sm_surface !== null
+          ? recordsMap[key].sm_surface + surfaceVal
+          : surfaceVal;
+      }
+      if (!isNaN(rootzoneVal)) {
+        recordsMap[key].sm_rootzone = recordsMap[key].sm_rootzone !== null
+          ? recordsMap[key].sm_rootzone + rootzoneVal
+          : rootzoneVal;
+      }
+      recordsMap[key].count += 1;
     }
   }
 
-  return Object.values(recordsMap);
+  // Calculate final daily averages across sub-daily readings
+  return Object.values(recordsMap).map((rec) => {
+    const finalRec = {
+      locationId: rec.locationId,
+      date: rec.date,
+      sm_surface: rec.sm_surface !== null ? Number((rec.sm_surface / rec.count).toFixed(6)) : null,
+      sm_rootzone: rec.sm_rootzone !== null ? Number((rec.sm_rootzone / rec.count).toFixed(6)) : null
+    };
+    return finalRec;
+  });
 }
 
 /**
  * Orchestrate complete sync pipeline for a given date range
  */
 export async function executeAppEEARSSync(username, password, startDateStr, endDateStr, taskName) {
-  // Ensure dates sent to AppEEARS use MM-DD-YYYY
   const formattedStartDate = formatDateForAppEEARS(startDateStr);
   const formattedEndDate = formatDateForAppEEARS(endDateStr);
 
