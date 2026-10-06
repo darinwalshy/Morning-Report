@@ -172,73 +172,104 @@ async function fetchBriefing() {
   }
   if (metaContainer) metaContainer.style.display = "none";
 
-  try {
-    const idToken = await user.getIdToken(true);
-    
-    let appCheckTokenResult = null;
-    if (window.appCheck && window.getLimitedUseToken) {
-      appCheckTokenResult = await window.getLimitedUseToken(window.appCheck);
-    }
+  const maxAttempts = 3;
 
-    const headers = {
-      "Content-Type": "application/json",
-      "Authorization": `Bearer ${idToken}`
-    };
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      // 1. Use cached token to prevent unnecessary network calls
+      const idToken = await user.getIdToken(false);
 
-    if (appCheckTokenResult && appCheckTokenResult.token) {
-      headers["X-Firebase-AppCheck"] = appCheckTokenResult.token;
-    }
+      let appCheckTokenResult = null;
+      if (window.appCheck && window.getLimitedUseToken) {
+        appCheckTokenResult = await window.getLimitedUseToken(window.appCheck);
+      }
 
-    // Retrieve settings payload from localStorage
-    const settingsPayload = {
-      userName: localStorage.getItem(SETTINGS_KEYS.userName) || "",
-      latitude: parseFloat(localStorage.getItem(SETTINGS_KEYS.latitude)) || DEFAULTS.latitude,
-      longitude: parseFloat(localStorage.getItem(SETTINGS_KEYS.longitude)) || DEFAULTS.longitude,
-      model: localStorage.getItem(SETTINGS_KEYS.model) || DEFAULTS.model,
-      voice: localStorage.getItem(SETTINGS_KEYS.voice) || DEFAULTS.voice
-    };
+      const headers = {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${idToken}`
+      };
 
-    const response = await fetch(FUNCTION_URL, {
-      method: "POST",
-      headers: headers,
-      body: JSON.stringify({
-        action: "generate",
-        settings: settingsPayload
-      })
-    });
+      if (appCheckTokenResult && appCheckTokenResult.token) {
+        headers["X-Firebase-AppCheck"] = appCheckTokenResult.token;
+      }
 
-    const data = await response.json().catch(() => ({}));
+      const settingsPayload = {
+        userName: localStorage.getItem(SETTINGS_KEYS.userName) || "",
+        latitude: parseFloat(localStorage.getItem(SETTINGS_KEYS.latitude)) || DEFAULTS.latitude,
+        longitude: parseFloat(localStorage.getItem(SETTINGS_KEYS.longitude)) || DEFAULTS.longitude,
+        model: localStorage.getItem(SETTINGS_KEYS.model) || DEFAULTS.model,
+        voice: localStorage.getItem(SETTINGS_KEYS.voice) || DEFAULTS.voice
+      };
 
-    if (!response.ok) {
-      throw new Error(data.error || `Server status: ${response.status}`);
-    }
+      const response = await fetch(FUNCTION_URL, {
+        method: "POST",
+        headers: headers,
+        body: JSON.stringify({
+          action: "generate",
+          settings: settingsPayload
+        })
+      });
 
-    if (reportText) {
-      reportText.classList.remove("loading-text");
-      const rawText = data.text || data.message || "";
-      reportText.textContent = rawText.replace(/\*\*/g, "");
-    }
+      const data = await response.json().catch(() => ({}));
 
-    if (data.audioBase64) {
-      currentAudioBase64 = data.audioBase64;
-    }
+      // Stop immediately if rate-limited or bad request (don't retry non-network errors)
+      if (response.status === 429) {
+        throw new Error(data.error || "Daily briefing request limit reached.");
+      }
 
-    // Display execution metadata badges
-    if (data.meta && metaContainer && metaModel && metaVoice) {
-      metaModel.textContent = `Model: ${data.meta.modelUsed}`;
-      metaVoice.textContent = `Voice: ${data.meta.voiceUsed}`;
+      if (!response.ok) {
+        throw new Error(data.error || `Server status: ${response.status}`);
+      }
 
-      metaModel.classList.toggle("fallback", Boolean(data.meta.modelFallback));
-      metaVoice.classList.toggle("fallback", Boolean(data.meta.voiceFallback));
+      // Success UI update
+      if (reportText) {
+        reportText.classList.remove("loading-text");
+        const rawText = data.text || data.message || "";
+        reportText.textContent = rawText.replace(/\*\*/g, "");
+      }
 
-      metaContainer.style.display = "flex";
-    }
+      if (data.audioBase64) {
+        currentAudioBase64 = data.audioBase64;
+      }
 
-  } catch (error) {
-    console.error("Failed to generate briefing:", error);
-    if (reportText) {
-      reportText.classList.remove("loading-text");
-      reportText.textContent = `⚠️ Warning: ${error.message}`;
+      if (data.meta && metaContainer && metaModel && metaVoice) {
+        metaModel.textContent = `Model: ${data.meta.modelUsed}`;
+        metaVoice.textContent = `Voice: ${data.meta.voiceUsed}`;
+
+        metaModel.classList.toggle("fallback", Boolean(data.meta.modelFallback));
+        metaVoice.classList.toggle("fallback", Boolean(data.meta.voiceFallback));
+
+        metaContainer.style.display = "flex";
+      }
+
+      return; // Success! Exit function.
+
+    } catch (error) {
+      console.warn(`Attempt ${attempt} of ${maxAttempts} failed:`, error.message);
+
+      // Do NOT retry if we hit the daily rate limit
+      if (error.message.includes("limit reached")) {
+        if (reportText) {
+          reportText.classList.remove("loading-text");
+          reportText.textContent = `⚠️ Warning: ${error.message}`;
+        }
+        return;
+      }
+
+      if (attempt < maxAttempts) {
+        // Backoff: Wait 1.2s before 2nd try, 2.4s before 3rd try
+        const backoffMs = attempt * 1200;
+        if (reportText) {
+          reportText.textContent = `Connection blip. Retrying (${attempt}/${maxAttempts})...`;
+        }
+        await new Promise((resolve) => setTimeout(resolve, backoffMs));
+      } else {
+        // Final failure after 3 attempts
+        if (reportText) {
+          reportText.classList.remove("loading-text");
+          reportText.textContent = `⚠️ Warning: ${error.message}`;
+        }
+      }
     }
   }
 }
