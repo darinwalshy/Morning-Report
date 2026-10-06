@@ -77,10 +77,9 @@ async function fetchVerseOfTheDay() {
       const data = await response.json();
       const text = data?.verse?.details?.text;
       const reference = data?.verse?.details?.reference;
-      const version = data?.verse?.details?.version || "NIV";
 
       if (text && reference) {
-        return `Verse: "${text}" - ${reference} (${version})`;
+        return `"${text}" - ${reference}`;
       }
     }
   } catch (err) {
@@ -576,26 +575,26 @@ Barometric Pressure: ${parsedMetar.barometricPressure}
           const threshold = (q.symbol === "^GSPC" || q.symbol === "^IXIC") ? 1.0 : 2.0;
           const isSignificantMove = Math.abs(changePercentVal) >= threshold;
           const sign = changeVal >= 0 ? "+" : "";
-          const formattedPercent = `${sign}${changePercentVal.toFixed(2)}%`;
+          const formattedPercent = `${sign}${Math.round(changePercentVal)}%`;
 
           if (q.symbol === "^GSPC" || q.symbol === "^IXIC") {
             const formattedPrice = formatToThreeSigFigs(priceVal);
             return isSignificantMove 
               ? `${name} (${q.symbol}): ${formattedPrice} (${formattedPercent}).`
-              : `${name} (${q.symbol}):${formattedPrice}.`;
+              : `${name} (${q.symbol}): ${formattedPrice}.`;
           }
 
           if (q.symbol === "BTC-USD") {
             const formattedPrice = formatToThreeSigFigs(priceVal);
-            if (!isSignificantMove) return `${name} (${q.symbol}):$${formattedPrice}.`;
+            if (!isSignificantMove) return `${name} (${q.symbol}): $${formattedPrice}.`;
             const formattedRawChange = `${sign}$${formatToThreeSigFigs(Math.abs(changeVal))}`;
-            return `${name} (${q.symbol}):$${formattedPrice} (${formattedPercent},${formattedRawChange}).`;
+            return `${name} (${q.symbol}): $${formattedPrice} (${formattedPercent}, ${formattedRawChange}).`;
           }
 
           const formattedPrice = formatToWholeInteger(priceVal);
-          if (!isSignificantMove) return `${name} (${q.symbol}):$${formattedPrice}.`;
+          if (!isSignificantMove) return `${name} (${q.symbol}): $${formattedPrice}.`;
           const formattedRawChange = `${sign}$${formatToWholeInteger(Math.abs(changeVal))}`;
-          return `${name} (${q.symbol}):$${formattedPrice} (${formattedPercent},${formattedRawChange}).`;
+          return `${name} (${q.symbol}): $${formattedPrice} (${formattedPercent}, ${formattedRawChange}).`;
         });
 
         financeContext = financeLines.length > 0 ? financeLines.join("\n") : "Financial market data currently unavailable.";
@@ -631,8 +630,8 @@ Barometric Pressure: ${parsedMetar.barometricPressure}
         : "Address the user in a warm, welcoming opening greeting.";
 
       const votdInstruction = votdContext
-        ? `Here is today's scripture: ${votdContext}\nPresent the verse text clearly followed by its reference. Then, immediately repeat the exact verse text a second time. Do NOT include any commentary, analysis, or reflection.`
-        : "Present an inspiring Bible verse along with its full Scripture reference (book, chapter, and verse). Then, immediately repeat the exact verse text a second time. Do NOT include any commentary, analysis, or reflection.";
+        ? `Here is today's scripture: ${votdContext}\nPresent the verse text and reference directly. Then, immediately repeat the exact verse text and reference a second time. Do NOT prefix the verse with words like 'Verse:' or 'Scripture:', and do NOT include any commentary, analysis, or translation notes.`
+        : "Present an inspiring Bible verse along with its full Scripture reference (book, chapter, and verse). Then, immediately repeat the exact verse text and reference a second time. Do NOT prefix the verse with words like 'Verse:', and do NOT include any commentary, analysis, or reflection.";
 
       const marketInstruction = isWeekendOrMonday
         ? `Present ONLY the latest level or price for each asset (S&P 500, NASDAQ, Bitcoin, SPCX, and Rocket Lab). Because markets are closed over the weekend/early week, DO NOT mention percentage changes, dollar changes, or news catalysts/reasons.`
