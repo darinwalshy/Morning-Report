@@ -141,10 +141,27 @@ function calculateRelativeHumidity(tempC, dewPointC) {
   return `${Math.min(100, Math.round(rh))}%`;
 }
 
-// Degrees to 16-point Cardinal Compass Conversion Helper
+// Degrees to Simplified 8-point Cardinal Compass Conversion Helper (Full Words)
 function degreesToCardinal(deg) {
-  if (deg === null || isNaN(deg)) return "VRB";
-  const directions = ["N", "NNE", "NE", "ENE", "E", "ESE", "SE", "SSE", "S", "SSW", "SW", "WSW", "W", "WNW", "NW", "NNW"];
+  if (deg === null || isNaN(deg)) return "Variable";
+  const directions = [
+    "North",       // 0° (N)
+    "North",       // 22.5° (NNE -> North)
+    "North East",  // 45° (NE)
+    "East",        // 67.5° (ENE -> East)
+    "East",        // 90° (E)
+    "East",        // 112.5° (ESE -> East)
+    "South East",  // 135° (SE)
+    "South",       // 157.5° (SSE -> South)
+    "South",       // 180° (S)
+    "South",       // 202.5° (SSW -> South)
+    "South West",  // 225° (SW)
+    "West",        // 247.5° (WSW -> West)
+    "West",        // 270° (W)
+    "West",        // 292.5° (WNW -> West)
+    "North West",  // 315° (NW)
+    "North"        // 337.5° (NNW -> North)
+  ];
   const index = Math.round(deg / 22.5) % 16;
   return directions[index];
 }
@@ -339,7 +356,7 @@ export const syncSoilMoistureAdmin = functions.https.onRequest(
 
       res.status(200).json({
         success: true,
-        message: `Synced ${savedCount} daily records for range ${startDateStr} to ${endDateStr}.`
+        message: `Synced ${savedCount} daily records for range ${startDateStr} to${endDateStr}.`
       });
     } catch (err) {
       console.error("Admin sync failed:", err);
@@ -581,20 +598,20 @@ Barometric Pressure: ${parsedMetar.barometricPressure}
             const formattedPrice = formatToThreeSigFigs(priceVal);
             return isSignificantMove 
               ? `${name} (${q.symbol}): ${formattedPrice} (${formattedPercent}).`
-              : `${name} (${q.symbol}): ${formattedPrice}.`;
+              : `${name} (${q.symbol}):${formattedPrice}.`;
           }
 
           if (q.symbol === "BTC-USD") {
             const formattedPrice = formatToThreeSigFigs(priceVal);
-            if (!isSignificantMove) return `${name} (${q.symbol}): $${formattedPrice}.`;
+            if (!isSignificantMove) return `${name} (${q.symbol}):$${formattedPrice}.`;
             const formattedRawChange = `${sign}$${formatToThreeSigFigs(Math.abs(changeVal))}`;
-            return `${name} (${q.symbol}): $${formattedPrice} (${formattedPercent}, ${formattedRawChange}).`;
+            return `${name} (${q.symbol}):$${formattedPrice} (${formattedPercent},${formattedRawChange}).`;
           }
 
           const formattedPrice = formatToWholeInteger(priceVal);
-          if (!isSignificantMove) return `${name} (${q.symbol}): $${formattedPrice}.`;
+          if (!isSignificantMove) return `${name} (${q.symbol}):$${formattedPrice}.`;
           const formattedRawChange = `${sign}$${formatToWholeInteger(Math.abs(changeVal))}`;
-          return `${name} (${q.symbol}): $${formattedPrice} (${formattedPercent}, ${formattedRawChange}).`;
+          return `${name} (${q.symbol}):$${formattedPrice} (${formattedPercent},${formattedRawChange}).`;
         });
 
         financeContext = financeLines.length > 0 ? financeLines.join("\n") : "Financial market data currently unavailable.";
@@ -630,8 +647,8 @@ Barometric Pressure: ${parsedMetar.barometricPressure}
         : "Address the user in a warm, welcoming opening greeting.";
 
       const votdInstruction = votdContext
-        ? `Here is today's scripture: ${votdContext}\nPresent the verse text and reference directly. Then, immediately repeat the exact verse text and reference a second time. Do NOT prefix the verse with words like 'Verse:' or 'Scripture:', and do NOT include any commentary, analysis, or translation notes.`
-        : "Present an inspiring Bible verse along with its full Scripture reference (book, chapter, and verse). Then, immediately repeat the exact verse text and reference a second time. Do NOT prefix the verse with words like 'Verse:', and do NOT include any commentary, analysis, or reflection.";
+        ? `Here is today's scripture: ${votdContext}\nPresent the verse text and reference directly. Then on a new line, repeat the exact verse text and reference a second time. Do NOT prefix the verse with words like 'Verse:' or 'Scripture:', and do NOT include any commentary, analysis, or translation notes.`
+        : "Present an inspiring Bible verse along with its full Scripture reference (book, chapter, and verse). Then on a new line, repeat the exact verse text and reference a second time. Do NOT prefix the verse with words like 'Verse:', and do NOT include any commentary, analysis, or reflection.";
 
       const marketInstruction = isWeekendOrMonday
         ? `Present ONLY the latest level or price for each asset (S&P 500, NASDAQ, Bitcoin, SPCX, and Rocket Lab). Because markets are closed over the weekend/early week, DO NOT mention percentage changes, dollar changes, or news catalysts/reasons.`
@@ -680,7 +697,7 @@ Structure the rest of the output with a blank line before each section title:
   3) Dew point temperature (°C).
   4) Absolute humidity (g/m³).
   5) Relative humidity (%).
-  6) Wind direction (compass direction, e.g., coming from SSW).
+  6) Wind direction (compass direction, e.g., coming from South West).
   7) Wind speed (km/h).
   8) Barometric pressure (hPa).
   9) Astronomical schedule (Sunrise, Sunset, Moonrise, Moonset, Moon phase, and Illumination %).
@@ -702,11 +719,11 @@ Structure the rest of the output with a blank line before each section title:
 CRITICAL FORMATTING REQUIREMENT FOR NEWS ITEMS:
 Each news item MUST strictly start on a new line with a bullet point, followed by "News Item X:" where X is the item number, followed by the headline in bold and a colon.
 Format example:
-* **News Item 1: Headline Title Here:** Thorough 4 to 5 sentence summary explaining what happened and why it matters.
+* **News Item 1: Headline Title Here:** Concise 3 to 4 sentence summary explaining what happened and why it matters.
 
-* **News Item 2: Headline Title Here:** Thorough 4 to 5 sentence summary explaining what happened and why it matters.
+* **News Item 2: Headline Title Here:** Concise 3 to 4 sentence summary explaining what happened and why it matters.
 
-* **News Item 3: Headline Title Here:** Thorough 4 to 5 sentence summary explaining what happened and why it matters.
+* **News Item 3: Headline Title Here:** Concise 3 to 4 sentence summary explaining what happened and why it matters.
 If fewer than 5 major stories are available on a light news day, provide as many as are relevant (down to 1). If live news search yields no results or fails, output: "News highlights are currently unavailable."
 
 5. **Verse of the Day:** ${votdInstruction}
@@ -759,6 +776,21 @@ If fewer than 5 major stories are available on a light news day, provide as many
 
         ssmlBody = ssmlBody.replace(/(- (?:S&P 500|NASDAQ|Bitcoin|SPCX|Rocket Lab):[^\n]+)/g, '$1 <break time="500ms"/>');
         ssmlBody = ssmlBody.replace(/(\*\s*\*\*[^*]+:\*\*)/g, '$1 <break time="600ms"/>');
+
+        // Verse of the Day specific cadence adjustments (pause before reference & between repetitions)
+        const votdSectionIndex = ssmlBody.indexOf("Verse of the Day:");
+        if (votdSectionIndex !== -1) {
+          let head = ssmlBody.slice(0, votdSectionIndex);
+          let votdText = ssmlBody.slice(votdSectionIndex);
+
+          // Pause before scripture reference hyphen
+          votdText = votdText.replace(/(\s+[-—]\s+)/g, '<break time="500ms"/> $1');
+
+          // Pause between verse repetitions on new line
+          votdText = votdText.replace(/\n(?="|\w)/g, '\n<break time="1200ms"/>');
+
+          ssmlBody = head + votdText;
+        }
 
         ssmlBody = ssmlBody
           .replace(/&/g, "&amp;")
